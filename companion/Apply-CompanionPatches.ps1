@@ -176,9 +176,33 @@
 #    loaded. vanilla stops naming; names already in a save stay. Code and
 #    names in the .cmpn section, which grows to 16 KB.
 #
+# 29. Staff limit (-StaffMax 1..100, default 50): how many paid employees you
+#    can hire. The remaster's own setting ([gameplay] staff_max in mods.ini,
+#    also the "Staff you can hire" slider in Options); 20 is the original.
+#
+# 30. Staff speed (-StaffSpeed, percent 100..195, default 125): how fast
+#    employees walk, on every terrain. 100 = as shipped.
+#
+# 31. Tournament build lock (-TourneyBuild locked|open, default locked): no
+#    construction while a tournament is on. Any terrain, elevation or building
+#    tool is put down every frame until the tournament ends, so nothing can be
+#    painted, raised or placed. Code in the .cmpn section.
+#
+# 32. Tournament wages (-TourneyWages unpaid|paid, default unpaid): staff draw
+#    no wages while a tournament is on, as golf already does in Championship
+#    mode. Code in the .cmpn section.
+#
+# 33. Slow calendar (-Calendar slow|vanilla, default slow): a month lasts as
+#    long as a whole season used to (8x the play time), so the year a career
+#    covers stretches over 8x more play. Wages, golfers, staff, animations and
+#    autosaves keep their real-time pace, so wages per month go up 8x. With
+#    -YearEvents monthly, the yearly events (and the board's debt verdict) come
+#    once a month, i.e. as often in play time as before. Saves keep their date.
+#    Code in the .cmpn section. See notes\slow-calendar.md.
+#
 # Usage (PowerShell):
 #   .\Apply-CompanionPatches.ps1                                # 2021, 2x vanilla starting side
-#   .\Apply-CompanionPatches.ps1 -StartYear 2001 -StartLand share -StaffRadius 100 -StaffNames off -NightTint vanilla -Celebrities vanilla -ProGolfers vanilla -PixelHdFix off -NewsHold 1 -EscapeAll off -KeepWeather off -LandmarkRadius 100 -WhiteFlowers off -Distances vanilla -Labels off -ProAim off -ScrollEdge off -NewsPopup off -ClubCache off -RedFlowers off -GreenRoll off -DesignNames off -ShotFix off -AllShots off -SnackPath needed -YearEvents yearly -CurveFix off -GolferNames vanilla   # unpatched
+#   .\Apply-CompanionPatches.ps1 -StartYear 2001 -StartLand share -StaffRadius 100 -StaffNames off -NightTint vanilla -Celebrities vanilla -ProGolfers vanilla -PixelHdFix off -NewsHold 1 -EscapeAll off -KeepWeather off -LandmarkRadius 100 -WhiteFlowers off -Distances vanilla -Labels off -ProAim off -ScrollEdge off -NewsPopup off -ClubCache off -RedFlowers off -GreenRoll off -DesignNames off -ShotFix off -AllShots off -SnackPath needed -YearEvents yearly -CurveFix off -GolferNames vanilla -StaffMax 20 -StaffSpeed 100 -TourneyBuild open -TourneyWages paid -Calendar vanilla   # unpatched
 #   .\Apply-CompanionPatches.ps1 -DryRun                        # report only
 #   .\Apply-CompanionPatches.ps1 -MapScale 10                   # also set new-course size
 
@@ -214,6 +238,11 @@ param(
   [ValidateSet('real', 'vanilla')][string]$GolferNames = 'real',
   [ValidateSet('monthly', 'yearly')][string]$YearEvents = 'monthly',
   [ValidateSet('on', 'off')][string]$CurveFix = 'on',
+  [ValidateRange(1, 100)][int]$StaffMax = 50,
+  [ValidateRange(100, 195)][int]$StaffSpeed = 125,
+  [ValidateSet('locked', 'open')][string]$TourneyBuild = 'locked',
+  [ValidateSet('unpaid', 'paid')][string]$TourneyWages = 'unpaid',
+  [ValidateSet('slow', 'vanilla')][string]$Calendar = 'slow',
   [switch]$DryRun,
   [switch]$Force
 )
@@ -581,7 +610,7 @@ function Night-Changes([byte[]]$bytes, $night, $want, $pe) {
 # saved with the game.
 $hookRx = '\x6B\xF8\x4C\xE8([\x00-\xFF]{4})\x89\xC6\xE8([\x00-\xFF]{4})\x80\x7C\x38\x2A\x00'
 $sectionName = '.cmpn'
-$sectionSize = 0x4000   # 0x1000 before news popups, 0x2000 before golfer names; an older section is grown in place
+$sectionSize = 0x5000   # 0x1000 before news popups, 0x2000 before golfer names, 0x4000 before the slow calendar; an older section is grown in place
 $sectionFlags = [uint32]3758096416   # 0xE0000020: code, execute, read, write
 
 $maleNames = @('James','Marcus','Diego','Kenji','Raj','Omar','Liam','Noah','Mateo','Ethan','Lucas','Mason','Elijah','Jamal',
@@ -1031,6 +1060,104 @@ function Curve-SiteBytes($curve, [bool]$on, [int64]$secVa) {
     else { $out += ,@($s.Off, $curveVanilla) }
   }
   return ,$out
+}
+
+# ------------------------------------------------------------- staff speed
+# Employees walk in the staff AI, FUN_00402a40 (golf 0x4037a2, exe
+# 0x6003662c). Each frame a walker moves dir_table[dir] x S / 2 / (3, or 4 on a
+# diagonal) in 1/1024ths of a tile, with S = speed x 64; speed is 2..6 by
+# terrain (6 on a path), +2 with record flag 8. Job 0xFA gets S + 128; flag
+# 0x10 sets S = 192. In the exe: shl edi,6; lea ebx,[edi+0x80]; ... mov
+# eax,0xC0. -StaffSpeed P makes the 64 an M = 64 x P% (imul edi,edi,M, the same
+# 3 bytes) and the 128 and 192 2M and 3M. Arrival (within 0x155) and the walk
+# timers are unchanged, so staff only cover ground faster.
+$speedRx = '(\xC1\xE7\x06|\x6B\xFF[\x00-\x7F])\x8D\x9F([\x00-\xFF]{4})\x80\x7C\x24\x0C\xFA\x0F\x45\xDF\xF6\x44\x28\x12\x10\xB8([\x00-\xFF]{4})\x0F\x45\xD8'
+
+function Find-StaffSpeed([byte[]]$bytes, [string]$text) {
+  $m = [regex]::Matches($text, $speedRx)
+  if ($m.Count -ne 1) { return $null }
+  $o = $m[0].Groups[1].Index; $a = $m[0].Groups[2].Index; $f = $m[0].Groups[3].Index
+  $mul = if ($bytes[$o] -eq 0xC1) { 64 } else { [int]$bytes[$o + 2] }
+  $ok = [BitConverter]::ToInt32($bytes, $a) -eq 2 * $mul -and [BitConverter]::ToInt32($bytes, $f) -eq 3 * $mul
+  return [pscustomobject]@{ Mul = $o; Add = $a; Flat = $f; M = $mul; Ok = $ok; Percent = [int][Math]::Round($mul * 100 / 64.0) }
+}
+
+function Speed-Changes($sp, [int]$pct) {
+  $m = Scaled 64 $pct
+  $op = if ($m -eq 64) { [byte[]](0xC1, 0xE7, 0x06) } else { [byte[]](0x6B, 0xFF, $m) }
+  return @(@($sp.Mul, $op), @($sp.Add, [BitConverter]::GetBytes([int](2 * $m))), @($sp.Flat, [BitConverter]::GetBytes([int](3 * $m))))
+}
+
+# ---------------------------------------------------- tournament build lock
+# A tournament sets game flag 0x200000 (FUN_0046c970, golf 0x46d009) and
+# clears it when it ends. Tools: terrain brush 0x4c2848, building 0x4c2854
+# (-1 = none), elevation = flag 0x2 (FUN_00433c60 sets it with the brush at
+# -1). The main loop's first statement each pass, paused or not, is mov dword
+# [0x59b738], 0 (exe 0x6005e1ac, 10 bytes): it becomes call .cmpn +0x12A0 and a
+# 5-byte nop. The code there does that store, and while the flag is set puts
+# every tool down (both at -1, flag 0x2 cleared), as the Frosted Mint HUD's
+# lights button does. A tool picked during a tournament drops the next frame.
+$tlAt = 0x12A0; $tlEnd = 0x12E0
+$tlRx = '(\xC7\x05\x38\xB7\x59\x00\x00\x00\x00\x00|\xE8[\x00-\xFF]{4}\x0F\x1F\x44\x00\x00)\xF6\x05\xB8\xE7\x59\x00\x04\x0F\x85'
+$tlVanilla = [byte[]](0xC7, 0x05, 0x38, 0xB7, 0x59, 0x00, 0x00, 0x00, 0x00, 0x00)
+# mov dword [0x59b738],0; test dword [0x59e7b8],0x200000; jz ret;
+# mov dword [0x4c2848],-1; mov dword [0x4c2854],-1; and dword [0x59e7b8],~2; ret
+$tlCode = [byte[]]((0xC7, 0x05, 0x38, 0xB7, 0x59, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0xF7, 0x05, 0xB8, 0xE7, 0x59, 0x00, 0x00, 0x00, 0x20, 0x00, 0x74, 0x1B,
+  0xC7, 0x05, 0x48, 0x28, 0x4C, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xC7, 0x05, 0x54, 0x28, 0x4C, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
+  0x83, 0x25, 0xB8, 0xE7, 0x59, 0x00, 0xFD, 0xC3) + @(0xCC) * 14)
+
+function Find-TourneyLock([byte[]]$bytes, [string]$text, $pe) {
+  $m = [regex]::Matches($text, $tlRx)
+  if ($m.Count -ne 1) { return $null }
+  $o = $m[0].Groups[1].Index; $va = Off-ToVa $pe $o; $on = $bytes[$o] -eq 0xE8
+  $r = [pscustomobject]@{ Site = $o; SiteVa = $va; On = $on; Bad = $false }
+  if ($on) {
+    $sec = $pe.Sections | Where-Object { $_.Name -eq $sectionName }
+    $t = $va + 5 + [BitConverter]::ToInt32($bytes, $o + 1)
+    if (-not $sec -or $sec.RawSize -lt $tlEnd -or $t -ne [int64]$pe.Base + $sec.Rva + $tlAt -or
+        (Compare-Object ([byte[]]$bytes[($sec.Raw + $tlAt)..($sec.Raw + $tlEnd - 1)]) $tlCode -SyncWindow 0)) { $r.Bad = $true }
+  }
+  return $r
+}
+
+function Tl-SiteBytes($tl, [bool]$on, [int64]$secVa) {
+  if ($on) { return [byte[]](@(0xE8) + (Rel32 ($tl.SiteVa + 5) ($secVa + $tlAt)) + @(0x0F, 0x1F, 0x44, 0x00, 0x00)) }
+  return $tlVanilla
+}
+
+# ---------------------------------------------------- tournament wages
+# Wages: every 0x400 / (difficulty + 2) ticks the main loop walks the staff
+# pool (exe 0x6005e586) and charges each paid employee its job's wage (cash,
+# ledger, a floating label at the employee). Each one is skipped with
+# test byte [0x59e7bb], 4 (game flag 0x4000000, Championship mode) at exe
+# 0x6005e5f6, 7 bytes before a jne. It becomes call .cmpn +0x12E0 and a 2-byte
+# nop; the code there tests both flags, 0x4000000 and 0x200000 (tournament on),
+# and returns with the flags for the jne.
+$twAt = 0x12E0; $twEnd = 0x1300
+$twRx = '(\xF6\x05\xBB\xE7\x59\x00\x04|\xE8[\x00-\xFF]{4}\x66\x90)\x0F\x85[\x00-\xFF]{4}\x0F\xBE\x06\x8A\x4E\xFF'
+$twVanilla = [byte[]](0xF6, 0x05, 0xBB, 0xE7, 0x59, 0x00, 0x04)
+# test dword [0x59e7b8], 0x04200000; ret
+$twCode = [byte[]]((0xF7, 0x05, 0xB8, 0xE7, 0x59, 0x00, 0x00, 0x00, 0x20, 0x04, 0xC3) + @(0xCC) * 21)
+
+function Find-TourneyWages([byte[]]$bytes, [string]$text, $pe) {
+  $m = [regex]::Matches($text, $twRx)
+  if ($m.Count -ne 1) { return $null }
+  $o = $m[0].Groups[1].Index; $va = Off-ToVa $pe $o; $on = $bytes[$o] -eq 0xE8
+  $r = [pscustomobject]@{ Site = $o; SiteVa = $va; On = $on; Bad = $false }
+  if ($on) {
+    $sec = $pe.Sections | Where-Object { $_.Name -eq $sectionName }
+    $t = $va + 5 + [BitConverter]::ToInt32($bytes, $o + 1)
+    if (-not $sec -or $sec.RawSize -lt $twEnd -or $t -ne [int64]$pe.Base + $sec.Rva + $twAt -or
+        (Compare-Object ([byte[]]$bytes[($sec.Raw + $twAt)..($sec.Raw + $twEnd - 1)]) $twCode -SyncWindow 0)) { $r.Bad = $true }
+  }
+  return $r
+}
+
+function Tw-SiteBytes($tw, [bool]$on, [int64]$secVa) {
+  if ($on) { return [byte[]](@(0xE8) + (Rel32 ($tw.SiteVa + 5) ($secVa + $twAt)) + @(0x66, 0x90)) }
+  return $twVanilla
 }
 
 # --------------------------------------------------------------- all shots
@@ -1859,8 +1986,9 @@ $yeDebtRx = '\x8B\x44\x24\x2C\x3B\x44\x24\x08\x0F\x8E[\x00-\xFF]{4}(\x83\x3D\xD4
 $yeDebtCmp = [byte[]](0x83, 0x3D, 0xD4, 0x1F, 0x57, 0x00, 0x00)                    # cmp dword [cash], 0
 $yeReset = [byte[]](0xC7, 0x05, 0x74, 0x63, 0x5A, 0x00, 0x00, 0x00, 0x00, 0x00)    # mov dword [debt strikes], 0
 $yeTpl = @(
-  # +0x1380: test [tick], 0x1FFF; jnz; cmp [cash], 0; ret; mov [esp], skip; ret
-  'f70570418300ff1f00007508833dd41f570000c3c70424', 'a:skip', 'c3cccccccc',
+  # +0x1380: test [tick], gate; jnz; cmp [cash], 0; ret; mov [esp], skip; ret
+  # gate 0x1FFF: verdict on March 1; 0x3FF (with -Calendar slow): on every 1st
+  'f70570418300', 'a:gate', '7508833dd41f570000c3c70424', 'a:skip', 'c3cccccccc',
   # +0x13A0 (cdecl like _itoa): month name of tick - 1, a space, then _itoa(value + 1 - year + year of tick - 1)
   '56578b7c2410a1704183004889c1c1e90a83e1078b348d08294c00acaa84c075fac647ff208b0d70418300c1e90dc1e80d29c80344240c406a0a5750e8',
   'r:itoa', ('83c40c8b4424105f5ec3' + ('cc' * 21)))
@@ -1886,7 +2014,7 @@ function Find-YearEvents([byte[]]$bytes, [string]$text, $pe) {
     July1 = $j.Groups[1].Index; July2 = $j.Groups[2].Index; July3 = $j.Groups[3].Index
     Year1 = $y.Groups[1].Index; Year2 = $y.Groups[2].Index; Back1 = $k.Groups[1].Index; Back2 = $k.Groups[2].Index
     Title = $t.Groups[1].Index - 1; TitleVa = (Off-ToVa $pe ($t.Groups[1].Index - 1)); Debt = $d.Groups[1].Index; DebtVa = (Off-ToVa $pe $d.Groups[1].Index)
-    Skip = (Off-ToVa $pe $reset) + 10; Itoa = $null; Masks = 'mixed'; On = $false; Mixed = $false; Bad = $false }
+    Skip = (Off-ToVa $pe $reset) + 10; Itoa = $null; Gate = 0; Masks = 'mixed'; On = $false; Mixed = $false; Bad = $false }
   $mon = @(($bytes[$r.July1 + 1] -eq 0x03), ($bytes[$r.July2] -eq 0xFC), ($bytes[$r.July3] -eq 0x00), ($bytes[$r.Year1 + 1] -eq 0x03),
            ($bytes[$r.Year2 + 1] -eq 0x03), ($bytes[$r.Back1] -eq 0xFF), ($bytes[$r.Back2] -eq 0xFF))
   $n = @($mon | Where-Object { $_ }).Count
@@ -1905,8 +2033,8 @@ function Find-YearEvents([byte[]]$bytes, [string]$text, $pe) {
     if (-not $sec -or $sec.RawSize -lt $yeEnd) { $r.Bad = $true; return $r }
     $f = Tpl-Read $bytes $yeTpl ($sec.Raw + $yeAt) $pe
     if (-not $f -or [regex]::Matches($latin1.GetString($bytes, $sec.Raw + $yeAt, $yeEnd - $yeAt), '^' + (Tpl-Rx $yeTpl)).Count -ne 1 -or
-        $f['skip'] -ne $r.Skip) { $r.Bad = $true; return $r }
-    $r.Itoa = $f['itoa']
+        $f['skip'] -ne $r.Skip -or ($f['gate'] -ne 0x1FFF -and $f['gate'] -ne 0x3FF)) { $r.Bad = $true; return $r }
+    $r.Itoa = $f['itoa']; $r.Gate = $f['gate']
   } else { $r.Itoa = $tTarget }
   $r.On = $titleOn -and $debtOn -and $r.Masks -eq 'monthly'
   $r.Mixed = -not $r.On -and ($titleOn -or $debtOn -or $r.Masks -ne 'yearly')
@@ -1915,7 +2043,7 @@ function Find-YearEvents([byte[]]$bytes, [string]$text, $pe) {
 
 # The code for section VA $va: the bytes from +0x1380 to +0x13FF.
 function Ye-Code([int64]$va, $ye) {
-  $b = Tpl-Build $yeTpl @{ skip = $ye.Skip; itoa = $ye.Itoa } ($va + $yeAt)
+  $b = Tpl-Build $yeTpl @{ skip = $ye.Skip; itoa = $ye.Itoa; gate = (Ye-Gate) } ($va + $yeAt)
   if ($b.Length -ne $yeEnd - $yeAt) { throw "year events code built to $($b.Length) bytes, expected $($yeEnd - $yeAt)" }
   return ,$b
 }
@@ -1935,8 +2063,11 @@ function Ye-SiteBytes($ye, [bool]$on, [int64]$secVa) {
   return ,$c
 }
 
+# The debt verdict's tick mask: a slow calendar's month is a whole old year.
+function Ye-Gate { if ($Calendar -eq 'slow') { return 0x3FF } else { return 0x1FFF } }
+
 function Describe-YearEvents($ye) {
-  if ($ye.On) { return 'monthly (yearly events every 1st, debt verdict on March 1)' }
+  if ($ye.On) { return "monthly (yearly events every 1st, debt verdict $(if ($ye.Gate -eq 0x3FF) { 'every 1st' } else { 'on March 1' }))" }
   if ($ye.Mixed) { return 'half patched' }
   return 'yearly (as shipped)'
 }
@@ -2252,6 +2383,16 @@ function Patch-Exe([string]$path) {
     }
   }
 
+  $sp = Find-StaffSpeed $bytes $text
+  if (-not $sp -or -not $sp.Ok) { Write-Warning "$name : staff walk speed site not recognised; staff speed left alone." }
+  else {
+    Write-Host "$name : staff walk speed = $($sp.Percent)%"
+    if ($sp.M -ne (Scaled 64 $StaffSpeed)) {
+      $changes += Speed-Changes $sp $StaffSpeed
+      Write-Host "$name : staff walk speed -> $StaffSpeed%"
+    }
+  }
+
   # Staff names, the Pixel HD fix, pro free aim and news popups live in the
   # added section; last, since adding, growing or removing it changes the file length.
   $names = Find-Names $bytes $text $pe
@@ -2269,6 +2410,10 @@ function Patch-Exe([string]$path) {
   $snack = Find-SnackPath $bytes $text $pe
   $gn = Find-GolferNames $bytes $text $pe
   $gnWant = $GolferNames -eq 'real'
+  $tl = Find-TourneyLock $bytes $text $pe
+  $tlWant = $TourneyBuild -eq 'locked'
+  $tw = Find-TourneyWages $bytes $text $pe
+  $twWant = $TourneyWages -eq 'unpaid'
   $snackWant = $SnackPath -eq 'free'
   $yeWant = $YearEvents -eq 'monthly'
   $greenWant = $GreenRoll -eq 'on'
@@ -2300,12 +2445,16 @@ function Patch-Exe([string]$path) {
   elseif (-not $snack.Bad) { Write-Host "$name : snack bar path = $(if ($snack.On) { 'not needed' } else { 'needed (as shipped)' })" }
   if (-not $gn) { Write-Warning "$name : roster sites not recognised; golfer names left alone." }
   elseif (-not $gn.Bad) { Write-Host "$name : golfer names = $(if ($gn.On) { 'real names' } else { 'as shipped' })" }
-  if (($sec -and (-not $names -or -not $fix)) -or ($aim -and $aim.Bad) -or ($pop -and $pop.Bad) -or ($club -and $club.Bad) -or ($green -and $green.Bad) -or ($dn -and $dn.Bad) -or ($shot -and $shot.Bad) -or ($curve -and $curve.Bad) -or ($ye -and $ye.Bad) -or ($snack -and $snack.Bad) -or ($gn -and $gn.Bad)) {
+  if (-not $tl) { Write-Warning "$name : main loop site not recognised; tournament build lock left alone." }
+  elseif (-not $tl.Bad) { Write-Host "$name : building during a tournament = $(if ($tl.On) { 'locked' } else { 'open (as shipped)' })" }
+  if (-not $tw) { Write-Warning "$name : wage site not recognised; tournament wages left alone." }
+  elseif (-not $tw.Bad) { Write-Host "$name : staff wages during a tournament = $(if ($tw.On) { 'none' } else { 'paid (as shipped)' })" }
+  if (($sec -and (-not $names -or -not $fix)) -or ($aim -and $aim.Bad) -or ($pop -and $pop.Bad) -or ($club -and $club.Bad) -or ($green -and $green.Bad) -or ($dn -and $dn.Bad) -or ($shot -and $shot.Bad) -or ($curve -and $curve.Bad) -or ($ye -and $ye.Bad) -or ($snack -and $snack.Bad) -or ($gn -and $gn.Bad) -or ($tl -and $tl.Bad) -or ($tw -and $tw.Bad)) {
     Write-Warning "$name : $sectionName is in use by a part not recognised; staff names, the Pixel HD fix, pro aim and news popups left alone."
-    $names = $null; $fix = $null; $aim = $null; $pop = $null; $club = $null; $green = $null; $dn = $null; $shot = $null; $curve = $null; $ye = $null; $snack = $null; $gn = $null
+    $names = $null; $fix = $null; $aim = $null; $pop = $null; $club = $null; $green = $null; $dn = $null; $shot = $null; $curve = $null; $ye = $null; $snack = $null; $gn = $null; $tl = $null; $tw = $null
   }
-  $secWant = ($names -and $namesWant) -or ($fix -and $fixWant) -or ($aim -and $aimWant) -or ($pop -and $popWant) -or ($club -and $clubWant) -or ($green -and $greenWant) -or ($dn -and $dnWant) -or ($shot -and $shotWant) -or ($curve -and $curveWant) -or ($ye -and $yeWant) -or ($snack -and $snackWant) -or ($gn -and $gnWant)
-  if ($names -or $fix -or $aim -or $pop -or $club -or $green -or $dn -or $shot -or $curve -or $ye -or $snack -or $gn) {
+  $secWant = ($names -and $namesWant) -or ($fix -and $fixWant) -or ($aim -and $aimWant) -or ($pop -and $popWant) -or ($club -and $clubWant) -or ($green -and $greenWant) -or ($dn -and $dnWant) -or ($shot -and $shotWant) -or ($curve -and $curveWant) -or ($ye -and $yeWant) -or ($snack -and $snackWant) -or ($gn -and $gnWant) -or ($tl -and $tlWant) -or ($tw -and $twWant)
+  if ($names -or $fix -or $aim -or $pop -or $club -or $green -or $dn -or $shot -or $curve -or $ye -or $snack -or $gn -or $tl -or $tw) {
     $secVa = 0
     if ($secWant) {
       if (-not $sec) { $addSection = $true; $secVa = [int64]$pe.Base + $pe.SizeOfImage; $secOff = $bytes.Length }
@@ -2325,6 +2474,8 @@ function Patch-Exe([string]$path) {
       if ($dn -and $dnWant) { $dc = Dn-Code $secVa $dn; [Array]::Copy($dc, 0, $blob, $dnAt, $dc.Length) }
       if ($shot -and $shotWant) { $tc = Shot-Code $secVa $shot; [Array]::Copy($tc, 0, $blob, $shotGate, $tc.Length) }
       if ($curve -and $curveWant) { [Array]::Copy($curveCode, 0, $blob, $curveAt, $curveCode.Length) }
+      if ($tl -and $tlWant) { [Array]::Copy($tlCode, 0, $blob, $tlAt, $tlCode.Length) }
+      if ($tw -and $twWant) { [Array]::Copy($twCode, 0, $blob, $twAt, $twCode.Length) }
       if ($ye -and $yeWant) { $yc = Ye-Code $secVa $ye; [Array]::Copy($yc, 0, $blob, $yeAt, $yc.Length) }
       if ($snack -and $snackWant) { $kc = Snack-Code $secVa $snack; [Array]::Copy($kc, 0, $blob, $snackAt, $kc.Length) }
       if ($gn -and $gnWant) { $nc = Gn-Code $secVa $gn; [Array]::Copy($nc, 0, $blob, $gnAt, $nc.Length) }
@@ -2424,6 +2575,20 @@ function Patch-Exe([string]$path) {
       }
       if ($diff) { Write-Host "$name : golfer names -> $(if ($gnWant) { 'real names' } else { 'as shipped' })" }
     }
+    if ($tl) {
+      $lb = Tl-SiteBytes $tl $tlWant $secVa
+      if (Compare-Object $bytes[$tl.Site..($tl.Site + 9)] $lb -SyncWindow 0) {
+        $changes += ,@($tl.Site, $lb)
+        Write-Host "$name : building during a tournament -> $(if ($tlWant) { 'locked' } else { 'open (as shipped)' })"
+      }
+    }
+    if ($tw) {
+      $wb = Tw-SiteBytes $tw $twWant $secVa
+      if (Compare-Object $bytes[$tw.Site..($tw.Site + 6)] $wb -SyncWindow 0) {
+        $changes += ,@($tw.Site, $wb)
+        Write-Host "$name : staff wages during a tournament -> $(if ($twWant) { 'none' } else { 'paid (as shipped)' })"
+      }
+    }
   }
 
   if (-not $changes -and -not $dropSection) { Write-Host "$name : nothing to change."; return }
@@ -2436,7 +2601,8 @@ function Patch-Exe([string]$path) {
       $news -and $news.Hold -eq 1 -and $esc -and -not $esc.On -and
       $weather -and -not $weather.Keep -and $edge -and -not $edge.On -and $lm -and $lm.Percent -eq 100 -and $dist -and $dist.Form -eq 'vanilla' -and $aim -and -not $aim.On -and
       $pop -and -not $pop.On -and $club -and -not $club.On -and $green -and -not $green.On -and $dn -and -not $dn.On -and
-      $shot -and -not $shot.On -and $curve -and -not $curve.On -and $all -and -not $all.On -and -not $all.Mixed -and $ye -and -not $ye.On -and -not $ye.Mixed -and $snack -and -not $snack.On -and $gn -and -not $gn.On) {
+      $shot -and -not $shot.On -and $curve -and -not $curve.On -and $all -and -not $all.On -and -not $all.Mixed -and $ye -and -not $ye.On -and -not $ye.Mixed -and $snack -and -not $snack.On -and $gn -and -not $gn.On -and
+      $sp -and $sp.M -eq 64 -and $tl -and -not $tl.On -and $tw -and -not $tw.On) {
     Copy-Item -LiteralPath $path -Destination $backup
     Write-Host "$name : original saved as $(Split-Path $backup -Leaf)"
   }
@@ -2540,7 +2706,19 @@ function Patch-Exe([string]$path) {
     $o2 = Find-GolferNames $after $afterText $pe2
     if (-not $o2 -or $o2.Bad -or $o2.On -ne $gnWant -or $o2.Log -ne $gn.Log -or $o2.Roster -ne $gn.Roster) { throw "$name : golfer names verification failed." }
   }
-  if ($names -or $fix -or $aim -or $pop -or $club -or $green -or $dn -or $shot -or $curve -or $ye -or $snack -or $gn) {
+  if ($sp -and $sp.Ok) {
+    $s2 = Find-StaffSpeed $after $afterText
+    if (-not $s2 -or -not $s2.Ok -or $s2.M -ne (Scaled 64 $StaffSpeed)) { throw "$name : staff speed verification failed." }
+  }
+  if ($tl) {
+    $l2 = Find-TourneyLock $after $afterText $pe2
+    if (-not $l2 -or $l2.Bad -or $l2.On -ne $tlWant) { throw "$name : tournament build lock verification failed." }
+  }
+  if ($tw) {
+    $w2 = Find-TourneyWages $after $afterText $pe2
+    if (-not $w2 -or $w2.Bad -or $w2.On -ne $twWant) { throw "$name : tournament wages verification failed." }
+  }
+  if ($names -or $fix -or $aim -or $pop -or $club -or $green -or $dn -or $shot -or $curve -or $ye -or $snack -or $gn -or $tl -or $tw) {
     $sec2 = $pe2.Sections | Where-Object { $_.Name -eq $sectionName }
     if ([bool]$sec2 -ne [bool]$secWant) { throw "$name : $sectionName section verification failed." }
     if ($sec2 -and ($sec2.RawSize -ne $sectionSize -or $sec2.VSize -ne $sectionSize -or $pe2.SizeOfImage -ne $sec2.Rva + $sectionSize -or
@@ -2568,6 +2746,37 @@ function Set-MapScale([int]$scale) {
   Write-Host "options.ini: [map] scale=$scale (applies to new courses after the next game start)."
 }
 
+# The remaster's own hiring limit, [gameplay] staff_max in mods.ini (1..100;
+# the Options page's "Staff you can hire" slider writes the same key).
+function Set-StaffMax([int]$max) {
+  $ini = Join-Path $InstallDir 'mods.ini'
+  if (-not (Test-Path -LiteralPath $ini)) { Write-Warning "mods.ini not found; staff limit left alone."; return }
+  $text = [IO.File]::ReadAllText($ini)
+  $nl = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+  $lines = [regex]::Split($text, '\r?\n')
+  $out = New-Object System.Collections.Generic.List[string]
+  $inGame = $false; $done = $false; $old = $null
+  foreach ($l in $lines) {
+    if ($l -match '^\s*\[(.+)\]\s*$') {
+      if ($inGame -and -not $done) { $out.Add("staff_max=$max"); $done = $true }
+      $inGame = $Matches[1] -ieq 'gameplay'
+    } elseif ($inGame -and $l -match '^\s*staff_max\s*=\s*(\S*)') {
+      $old = $Matches[1]
+      if (-not $done) { $out.Add("staff_max=$max"); $done = $true }
+      continue
+    }
+    $out.Add($l)
+  }
+  if ($inGame -and -not $done) { $out.Add("staff_max=$max"); $done = $true }
+  if (-not $done) { $out.Add(''); $out.Add('[gameplay]'); $out.Add("staff_max=$max") }
+  $new = [string]::Join($nl, $out)
+  $shown = if ($old) { $old } else { '20 (default)' }
+  if ($new -ceq $text) { Write-Host "mods.ini: staff limit = $max."; return }
+  if ($DryRun) { Write-Host "mods.ini: staff limit $shown -> $max (dry run)."; return }
+  [IO.File]::WriteAllText($ini, $new)
+  Write-Host "mods.ini: staff limit $shown -> $max."
+}
+
 if (-not (Test-Path -LiteralPath $InstallDir)) { throw "Install folder not found: $InstallDir (use -InstallDir)." }
 if (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($InstallDir, [StringComparison]::OrdinalIgnoreCase) }) {
   throw "SimGolf Remastered is running from $InstallDir. Close it first."
@@ -2583,4 +2792,5 @@ Set-WhiteFlowers $WhiteFlowers
 Set-RedFlowers $RedFlowers
 Set-Labels $Labels
 Set-YearEventLabels $YearEvents
+Set-StaffMax $StaffMax
 
