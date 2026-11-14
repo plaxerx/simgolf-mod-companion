@@ -1,0 +1,30 @@
+# Companion labels (personal QOL, not upstream): clearer building and skill
+# names. Installed and switched on by Apply-CompanionPatches.ps1 -Labels on
+# (mods.ini [mods] companion_labels=1); -Labels off removes it.
+id = "companion_labels"
+name = "Companion labels"
+version = "0.1.0"
+authors = ["companion"]
+description = "Clearer names: Snack Shack for the Snack Bar, Cart Barn, Practice Green, Broadcast Booth, and golf terms for the skills (Driving Distance, Iron Play, Scrambling). Only names change, so it works with any save."
+platform = "^1.0"
+game = ">=1.2.0"
+tags = ["labels"]
+
+[touches.data]
+"buildings.home_site.name" = "set"
+"buildings.putting_green.name" = "set"
+"buildings.snack_bar.name" = "set"
+"buildings.cart_garage.name" = "set"
+"buildings.willow_tree.name" = "set"
+"buildings.tv_tower.name" = "set"
+"buildings.tv_booth.name" = "set"
+"skills.power_hitter.label" = "set"
+"skills.long_driver.label" = "set"
+"skills.accurate_driver.label" = "set"
+"skills.accurate_irons.label" = "set"
+"skills.accurate_putter.label" = "set"
+"skills.draw_shot.label" = "set"
+"skills.fade_shot.label" = "set"
+"skills.high_backspin.label" = "set"
+"skills.recovery.label" = "set"
+"skills.positive_attitude.label" = "set"

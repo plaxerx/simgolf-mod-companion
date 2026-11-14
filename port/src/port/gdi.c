@@ -789,6 +789,7 @@ typedef struct {
   uint16_t *snap;               // the bounds as they looked after the text
   uint16_t c16;                 // the text colour as stored in the DIB
   uint32_t rgb;                 // COLORREF
+  int alpha;                    // gdi_text_alpha at the time of drawing
   int file, bold, underline, uw0, uw1, ubase;
   int pj;
   float em;
@@ -800,6 +801,9 @@ typedef struct {
 #define TEXT_MAX 1024
 static TextRec **g_text;  // TEXT_MAX entries, allocated on first use (see hd.c on static data)
 static int g_ntext;
+static int g_text_alpha = 255;   // companion: legacy_text.h gdi_text_alpha (money popup fade)
+
+void gdi_text_alpha(int alpha) { g_text_alpha = alpha < 0 ? 0 : alpha > 255 ? 255 : alpha; }
 
 static void text_free(int i) {
   TextRec *r = g_text[i];
@@ -1067,7 +1071,7 @@ static void pj_fit_log(Font *f, const char *s, int n, int wp) {
 
 static TextRec *text_pj_begin(Dc *dc, Dib *d, Font *f, int n, int x, int base, int w) {
   TextRec *r = calloc(1, sizeof *r);
-  r->dib=d; r->pj=1; r->file=f->pj_file; r->rgb=dc->text_color & 0xffffff;
+  r->dib=d; r->pj=1; r->file=f->pj_file; r->rgb=dc->text_color & 0xffffff; r->alpha=g_text_alpha;
   r->em=f->pj_scale/stbtt_ScaleForMappingEmToPixels(&g_fonts[r->file].info,1);
   r->x0=r->y0=1<<30; r->x1=r->y1=-(1<<30);
   r->clip[2]=d->w; r->clip[3]=d->h;
@@ -1177,9 +1181,11 @@ void gdi_legacy_capture(const uint16_t *pixels,uint16_t *clean,int w,int h,Legac
         if(g->index!=index) {duplicate=0;break;}
       }
     }
+    // (alpha is not part of the match: runs go newest first, so a run copied
+    // through several DIBs keeps the alpha of its latest draw.)
     if(duplicate)continue;
     LegacyRun *o=text->run+text->count++;
-    *o=(LegacyRun){.font=g_fonts[r->file].data,.em=r->em,.rgb=r->rgb,.bold=r->bold,
+    *o=(LegacyRun){.font=g_fonts[r->file].data,.em=r->em,.rgb=r->rgb,.alpha=r->alpha,.bold=r->bold,
       .underline=r->underline,.uw0=r->uw0,.uw1=r->uw1,.ubase=r->ubase,
       .first=text->glyphs,.count=r->nglyph};
     memcpy(o->clip,r->clip,sizeof o->clip);
@@ -1287,6 +1293,7 @@ nu TextOutA(nu hdc, nu x, nu y, nu str, nu n) {
     rec->x1 = rec->y1 = -(1 << 30);
     rec->c16 = c16;
     rec->rgb = cr & 0xffffff;
+    rec->alpha = g_text_alpha;
     rec->file = f->file;
     rec->em = f->scale / stbtt_ScaleForMappingEmToPixels(info, 1);
     rec->bold = f->bold;

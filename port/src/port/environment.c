@@ -69,9 +69,11 @@ EnvironmentSample environment_sample(const EnvironmentConfig *c, double seconds)
   double warmth=c->golden_hour?mood.golden:0;
   // Low sunlight stays readable while its color and direction change.
   day=fmin(1,day+warmth*(1-day)*1.6);
-  s.red = (Uint8)lround(255 * mix(0.40, 1, day) * overcast);
-  s.green = (Uint8)lround(255 * (mix(0.49, 1, day) - 0.14 * twilight) * overcast);
-  s.blue = (Uint8)lround(255 * (mix(0.69, 1, day) - 0.24 * twilight));
+  // companion: a brighter, bluer clear night (nautical twilight), (115, 145, 224)
+  // instead of (102, 125, 176): the course has no lights to play by.
+  s.red = (Uint8)lround(255 * mix(0.45, 1, day) * overcast);
+  s.green = (Uint8)lround(255 * (mix(0.57, 1, day) - 0.14 * twilight) * overcast);
+  s.blue = (Uint8)lround(255 * (mix(0.88, 1, day) - 0.24 * twilight));
 
   double seasonal=c->season==1?.012:c->season==2?-.008:0;
   double readable=bound(c->readability,0,1,0)*day;

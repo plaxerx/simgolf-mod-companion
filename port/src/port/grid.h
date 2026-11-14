@@ -73,6 +73,12 @@ static inline uint8_t grid_tile_byte(const void *base, int row, int col, int ele
 #define GEN_CREEKS ((g_map_w + 25) / 50)                // 1, 1, 2, 3
 #define GEN_PATCH_ROWS ((4 * g_map_w + 25) / 50)        // the 4 x 6 grid of patches
 #define GEN_PATCH_COLS ((6 * g_map_w + 25) / 50)
+// Starting land (companion): the land generator owns the centre square of
+// side 2k, k the largest with 4k^2 <= GEN_START_LAND(acres * 10). [map]
+// start_land=0 keeps GEN_AREA (the vanilla share of the map); N > 0 makes the
+// side N times the vanilla side on any map (n * N^2). grid.c.
+int grid_start_land(int n);
+#define GEN_START_LAND(n) grid_start_land((int)(n))
 // Course map screens: half width and height of a tile's diamond (6, 3 px on
 // 50 x 50; port/src/port/golf/map_screens.c), rounded up so tiles never gap.
 #define GEN_MAP_HW ((300 + g_map_w - 1) / g_map_w)

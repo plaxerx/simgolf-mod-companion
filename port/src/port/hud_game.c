@@ -382,6 +382,23 @@ static int news_history_on(void) {
   return capture;
 }
 
+// Companion: news messages stay [ui] news_hold times longer (1..8, default 3; 1 = as shipped).
+// FUN_0040cb00 sets the timer to length / (3 or 4) + 16 course ticks, which the 2x-4x speeds
+// burn through before an event can be read.
+static int news_hold(void) {
+  static unsigned seen = ~0u;
+  static int hold = 3;
+  unsigned serial = mods_serial();
+  if (serial != seen) {
+    seen = serial;
+    const char *v = mods_get("ui.news_hold");
+    hold = v ? atoi(v) : 3;
+    if (hold < 1) hold = 1;
+    if (hold > 8) hold = 8;
+  }
+  return hold;
+}
+
 // A golfer on the course: the record's state byte (+0x21) is neither 0 (unused) nor -1 (the "hire an
 // employee" placeholder, which opens that dialog when selected).
 static int golfer_ok(int slot) {
@@ -463,6 +480,7 @@ static void note_messages(const char *date, int posted) {
 // Called only after the original news function accepts and finishes a post.
 // Keep polling for load-time state, with identity separate from transient presentation state.
 void hud_news_posted(void) {
+  G32(0x5a7144) = G32(0x5a7144) * news_hold();   // companion: longer display
   if (!news_history_on()) return;
   char keep[512], numeric[12], date[24];
   int16_t year = G16(0x5a6d3c);
@@ -527,7 +545,7 @@ static void speaker_art(void) {
 // inside their work zone: employee record +0x10/+0x11 is the zone's centre tile (-1 none), jobs -4 and -6 are
 // the ones the main loop (FUN_00403xxx) sends to weedy tiles, within 12 tiles (16 for the technician, record
 // flag 8). When 3 or more weedy tiles of a hole lie outside every zone the HUD posts one card for that hole
-// ("Hire a Turf Technician or move one to cover it") with a button to People > Staff, at most once per hole
+// ("Hire a Greenkeeper or move one to cover it") with a button to People > Staff, at most once per hole
 // per game month. The card is a history entry like a game message (g_hist) with HUD_SHOW_STAFF as its target.
 #define EMP_BASE staff_base()
 #define EMP_COUNT STAFF_CAPACITY
@@ -630,7 +648,7 @@ static void weed_check(const char *date) {
       m = &g_hist[g_hist_n++];
     }
     memset(m, 0, sizeof *m);
-    snprintf(m->text, sizeof m->text, "Weeds are spreading on hole %d (%s). Hire a Turf Technician or move one to cover it.", h, nm);
+    snprintf(m->text, sizeof m->text, "Weeds are spreading on hole %d (%s). Hire a Greenkeeper or move one to cover it.", h, nm);
     copy_str(m->date, sizeof m->date, date);
     m->t_ms = host_now_ms();
     m->seq = g_weed_seq = g_news_seq = ++g_hist_seq;

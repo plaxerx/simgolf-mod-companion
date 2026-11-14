@@ -60,18 +60,21 @@ void legacy_text_draw(LegacyRenderer *t,const LegacyText *text,float x,float y,f
     if(clipped && !SDL_IntersectRect(&clip,&saved,&clip))continue;
     SDL_RenderSetClipRect(t->r,&clip);
     Uint8 red=r->rgb&255,green=(r->rgb>>8)&255,blue=(r->rgb>>16)&255;
+    Uint8 alpha=(Uint8)(r->alpha<0?0:r->alpha>255?255:r->alpha);
+    if(!alpha)continue;
     for(int k=0;k<r->count;k++) {
       const LegacyGlyph *p=text->glyph+r->first+k;
       Glyph *g=glyph(t,r->font,p->index,r->em*scale);
       if(!g || !g->texture)continue;
       SDL_SetTextureColorMod(g->texture,red,green,blue);
+      SDL_SetTextureAlphaMod(g->texture,alpha); // glyphs are cached and shared: set every time
       SDL_FRect d={x+p->x*scale+g->ox,y+p->y*scale+g->oy,(float)g->w,(float)g->h};
       SDL_RenderCopyF(t->r,g->texture,NULL,&d);
       if(r->bold) { d.x+=scale;SDL_RenderCopyF(t->r,g->texture,NULL,&d); }
     }
     if(r->underline) {
       SDL_SetRenderDrawBlendMode(t->r,SDL_BLENDMODE_BLEND);
-      SDL_SetRenderDrawColor(t->r,red,green,blue,255);
+      SDL_SetRenderDrawColor(t->r,red,green,blue,alpha);
       SDL_FRect line={x+r->uw0*scale,y+r->ubase*scale,(r->uw1-r->uw0)*scale,fmaxf(1,scale)};
       SDL_RenderFillRectF(t->r,&line);
     }

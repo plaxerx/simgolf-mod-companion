@@ -355,7 +355,7 @@
       ],
       [
         "  } while ((int)((uint)(byte)(&DAT_00571ff5)[iVar10] * 10) < iVar11 * iVar11 * 4);",
-        "  } while (GEN_AREA((uint)(byte)(&DAT_00571ff5)[iVar10] * 10) < iVar11 * iVar11 * 4);"
+        "  } while (GEN_START_LAND((uint)(byte)(&DAT_00571ff5)[iVar10] * 10) < iVar11 * iVar11 * 4);"
       ],
       [
         "    uVar12 = (int)(iVar10 - 0x19U) >> 0x1f;\n    iVar19 = FUN_00467130((iVar10 - 0x19U ^ uVar12) - uVar12,8,0x32);\n    iVar11 = iVar19 + iVar23 + -0xb + (uVar21 & 0xffff);",
