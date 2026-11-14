@@ -16,7 +16,7 @@ new years. The script finds the 10 display sites by byte signature (8 x
 keeps the original as `<exe>.companion-backup`, and checks its own work.
 
 - Another year: `Apply-CompanionPatches.ps1 -StartYear 2031`
-- Undo everything: `Apply-CompanionPatches.ps1 -StartYear 2001 -StartLand share -StaffRadius 100 -StaffNames off -NightTint vanilla -Celebrities vanilla -ProGolfers vanilla -PixelHdFix off -NewsHold 1 -EscapeAll off -KeepWeather off -LandmarkRadius 100 -WhiteFlowers off -Distances vanilla -Labels off -ProAim off -ScrollEdge off -NewsPopup off -GreenRoll off -ShotFix off -AllShots off -YearEvents yearly -CurveFix off -ClubCache off -RedFlowers off -DesignNames off -SnackPath needed -GolferNames vanilla` (gives back the byte-identical program and the original data files)
+- Undo everything: `Apply-CompanionPatches.ps1 -StartYear 2001 -StartLand share -StaffRadius 100 -StaffNames off -NightTint vanilla -Celebrities vanilla -ProGolfers vanilla -PixelHdFix off -NewsHold 1 -EscapeAll off -KeepWeather off -LandmarkRadius 100 -WhiteFlowers off -Distances vanilla -Labels off -ProAim off -ScrollEdge off -NewsPopup off -GreenRoll off -ShotFix off -AllShots off -YearEvents yearly -CurveFix off -ClubCache off -RedFlowers off -DesignNames off -SnackPath needed -GolferNames vanilla -StaffMax 20 -StaffSpeed 100 -TourneyBuild open -TourneyWages paid` (gives back the byte-identical program and the original data files)
 - Preview: `Apply-CompanionPatches.ps1 -DryRun`
 - Re-run after every game update, since an update replaces the program (and
   with it every fix below, the Pixel HD flicker fix included).
@@ -612,6 +612,36 @@ default). Code, tables and names are in the `.cmpn` section (+0x2000 to
 with a real save): every regular has a real name, both in the roster and
 through golf's own name function. `-GolferNames vanilla` stops the naming;
 names already kept in a save stay.
+
+## Staff: 50 hires, 25% faster walking
+
+- **Limit.** `-StaffMax 50` (the default) sets the remaster's own hiring limit,
+  `[gameplay] staff_max` in `mods.ini` (20 as shipped, up to 100; the
+  Options page's "Staff you can hire" slider writes the same key). The staff
+  pool holds 128, so 50 fits with room for the other walkers.
+- **Speed.** `-StaffSpeed 125` (the default, 100 to 195): employees walk 25%
+  faster on every terrain. The staff AI (FUN_00402a40) moves a walker
+  speed x 64 per frame (speed 2..6 by terrain); the 64 and the two special
+  steps built from it (128, 192) are scaled in place, 3 immediates, no code
+  added. Tested in the running game (a copy): every step per frame matched
+  x80 (106, 66, 53, 50/50, 20/20), none the shipped x64.
+
+## Tournaments: no building, no wages
+
+While a tournament is on (game flag `0x200000`, from accepting the SGA's
+offer to the results):
+
+- `-TourneyBuild locked` (the default): no construction. Every frame, paused
+  or not, any terrain, elevation or building tool is put down, so nothing can
+  be painted, raised or placed until the tournament ends. Tested (a copy, a
+  save in a tournament): a picked tool drops the next frame; with the flag
+  clear it stays.
+- `-TourneyWages unpaid` (the default): staff draw no wages, as golf already
+  does in Championship mode. Tested: a wage tick during the tournament paid
+  0 of 17 employees, after it 16 of 17 (as shipped).
+
+Both are small hooks in the `.cmpn` section (+0x12A0, +0x12E0). How
+tournaments and the SGA's standards work: `notes/tournaments.md`.
 
 ## Map size
 
