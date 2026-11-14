@@ -750,12 +750,18 @@ static void draw_layer_ref(Rt *t, Layer *L, SDL_Texture *target, Rect d, int sw,
         SDL_Rect clip;
         int clipped = SDL_RenderIsClipEnabled(t->r);
         if (clipped) SDL_RenderGetClipRect(t->r, &clip);
+        // companion: SDL_SetRenderTarget resets the render scale. Pixel HD draws the course into its
+        // small picture at scale 1/pg, so without this the frame that rebuilds the copy (every new game
+        // frame at a non-whole UI scale) showed the course pg times too big: a zoom flicker.
+        float scale_x = 1, scale_y = 1;
+        SDL_RenderGetScale(t->r, &scale_x, &scale_y);
         SDL_SetRenderTarget(t->r, L->pre);
         SDL_SetTextureScaleMode(L->src, SDL_ScaleModeNearest);
         SDL_SetTextureBlendMode(L->src, SDL_BLENDMODE_NONE);
         SDL_RenderCopy(t->r, L->src, &src, NULL);
         L->pre_serial = L->serial;
         SDL_SetRenderTarget(t->r, target);
+        SDL_RenderSetScale(t->r, scale_x, scale_y);   // before the clip, which SDL stores scaled
         if (clipped) SDL_RenderSetClipRect(t->r, &clip);
       }
       SDL_SetTextureBlendMode(L->pre, blend);
@@ -2141,7 +2147,8 @@ int hd_present(const uint16_t *screen) {
           g_climate.target_rain, g_climate.target_cloud, g_climate.target_storm, g_environment_seconds);
       }
     }
-  } else g_climate.initialized = 0;
+  }   // companion: a frame that is not the course (a save, a dialog) keeps the weather; resetting it here
+       // made the next course frame jump straight to a new front's cloud and rain
   EnvironmentSample weather_sun = environment_sample(&environment, g_environment_seconds);
   if (course && environment.enabled && environment.day_night && getenv("SIMGOLF_ATMOSPHERE_LOG")) {
     static double logged_seconds=-1;
@@ -2171,7 +2178,7 @@ int hd_present(const uint16_t *screen) {
       weather_air_update(&g_air,&g_air_table,place,theme,tick,environment.cloud_seed,front,
         g_environment_seconds,report_state.hour,report_state.rain,report_state.cloud);
     }
-  } else g_air.initialized=0;
+  }   // companion: kept across frames that are not the course, as the regional weather above
   environment.air_valid=g_air.initialized;environment.celsius=g_air.c;environment.humidity=g_air.rh;
   environment.season=course?(((*(const uint32_t *)(uintptr_t)0x00834170>>10)&7)<3?0:((*(const uint32_t *)(uintptr_t)0x00834170>>10)&7)<6?1:2):0;
   weather_state=sample_weather(&environment,course,g_environment_seconds,weather_sun.hour);

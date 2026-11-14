@@ -135,7 +135,11 @@ float receiver_value(float2 pixel) {
   if (receiver.w < 0.5 || receiver.z <= 0.0) return 0.0;
   int2 q = (int2)floor((pixel - receiver.xy) / receiver.z);
   int2 size = (int2)receiver_size.xy;
-  if (any(q < 0) || any(q >= size)) return 0.0;
+  // companion: while the course slides (smooth scrolling), the edge it uncovers shows the previous
+  // picture, outside this frame's receiver. Returning 0 there ("not the course") skipped the
+  // daylight lift and wet shading, a dark bar at the bottom (scrolling up) or top (down). The
+  // nearest receiver pixel stands in for it; at rest the receiver covers the whole course.
+  q = clamp(q, int2(0, 0), size - 1);
   return receiver_map.Load(int3(q, 0)).r;
 }
 
@@ -202,7 +206,8 @@ VertexOut vs_main(uint id : SV_VertexID) {
 
 float3 feature_value(float2 pixel) {
   int2 q=int2(floor((pixel-receiver.xy)/max(receiver.z,.001)));
-  if(any(q<0)||any(q>=int2(receiver_size.xy))||receiver.w<.5)return 0;
+  if(receiver.w<.5)return 0;
+  q=clamp(q,0,int2(receiver_size.xy)-1);   // companion: as receiver_value
   return receiver_map.Load(int3(q,0)).gba;
 }
 float3 feature_normal(float packed) {

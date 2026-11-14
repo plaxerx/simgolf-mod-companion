@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../data/tables/skills.json",
+  "description": "Golf terms for the skill names (24 characters at most). Luck stays.",
+  "set": {
+    "power_hitter.label": "Power",
+    "long_driver.label": "Driving Distance",
+    "accurate_driver.label": "Driving Accuracy",
+    "accurate_irons.label": "Iron Play",
+    "accurate_putter.label": "Putting",
+    "draw_shot.label": "Draw (right to left)",
+    "fade_shot.label": "Fade (left to right)",
+    "high_backspin.label": "Spin Control",
+    "recovery.label": "Scrambling",
+    "positive_attitude.label": "Confidence"
+  }
+}

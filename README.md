@@ -20,6 +20,63 @@ it on your PC and nothing from it ever leaves your computer.
 
 Version **0.1.37** fixes the land-sale map, which showed some tracts in each other's places, and restores your character's work-area ring on the staff map. It keeps everything from 0.1.36, including the snapshot popup and VIP face fixes. See the [changelog](CHANGELOG.md) for details.
 
+## Companion fork (this repository)
+
+This fork builds on SimGolf Remastered 0.1.37; it does not replace it.
+Everything above and below this section is the upstream mod, unchanged. The
+fork adds quality-of-life changes in two layers:
+
+1. **Companion patcher** (`companion/`): `Apply-CompanionPatches.ps1` (or
+   double-click `Apply-CompanionPatches.cmd`) patches an **installed**
+   SimGolf Remastered, so no build is needed. Close the game first, and run it
+   again after every game update. Every change has an option to turn it off,
+   and the README's undo line gives back the byte-identical program and data
+   files. Details, tests and options: [companion/README.md](companion/README.md);
+   research notes in `companion/notes/`.
+2. **Source changes** (`port/`, `data/mods.ini`): a few of the same changes
+   made in the mod's source, each marked with a `companion:` comment, so a
+   build from this repository includes them. They are small edits inside
+   upstream files plus one new file (`port/src/port/golf/money_labels.c`).
+
+### What the fork changes
+
+**Pace and progression**
+- Calendar starts in 2021 instead of 2001.
+- Year events every month: the board's review ("END of MONTH"), the SGA
+  invitation and the yearly drift come on the 1st of every month. The debt
+  verdict stays yearly.
+- News messages stay up 3x longer; important news opens a popup and pauses.
+
+**Course and buildings**
+- Starting land 2x the vanilla side on any map size (source and patcher).
+- New map sizes apply without a restart (source).
+- Snack shacks work without a cart path to the clubhouse.
+- Staff work radius 1.5x; landmark reach 2x, and the placement ring shows
+  the real reach.
+- Flower beds: true white and true red palettes. Design tooltips name the
+  flower, bed, tree or bench ("Red roses, curved bed", "Japanese maple").
+
+**Golf**
+- Modern shot distances with one set of tees.
+- Fade, draw and backspin from any lie.
+- Curve fix: long draws and fades no longer fly 500+ yards.
+- Pro aim: hold Shift for free aim; the pro's shot no longer gets stuck.
+- Greens no longer speed the ball up downhill (gentler break).
+
+**People and names**
+- Golfers: the 100 regulars get real "First Last" names (about 88,000
+  combinations, a new set per career, kept in the save).
+- Staff get random real names; clearer job titles and labels; 2020s
+  celebrities and touring pros.
+
+**Look and controls**
+- Brighter, bluer nights (source and patcher).
+- Upstream bugs fixed: Pixel HD zoom flicker, the dark bar while scrolling,
+  weather jumping after a save or dialog, and the clubhouse flicking to old
+  art when zoomed out.
+- Escape closes everything in one press (source and patcher).
+- Money popups fade in and out (source only).
+
 ## New features and improvements over vanilla
 
 ### Mod settings in the game

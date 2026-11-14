@@ -1,0 +1,13 @@
+{
+  "$schema": "../../../data/tables/buildings.json",
+  "description": "Names only (15 characters at most). Pathway and Benches stay: the remaster's Extras tray names those categories itself.",
+  "set": {
+    "home_site.name": "Home Lot",
+    "putting_green.name": "Practice Green",
+    "snack_bar.name": "Snack Shack",
+    "cart_garage.name": "Cart Barn",
+    "willow_tree.name": "Scenic Willow",
+    "tv_tower.name": "Camera Tower",
+    "tv_booth.name": "Broadcast Booth"
+  }
+}

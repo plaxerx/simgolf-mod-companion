@@ -30,12 +30,12 @@ typedef struct { const char *name; short x, y; int tool; UiIcon icon; } Ctl;
 static const Ctl k_amenities[] = {
     {"Pathway", 333, 526, 0, UI_ICON_PATH},     {"Benches", 470, 575, 1, UI_ICON_HOUSE},
     {"Flower bed", 652, 575, 2, UI_ICON_SPARKLE}, {"Ball washer", 302, 563, 3, UI_ICON_CUP},
-    {"Landmarks", 591, 575, 4, UI_ICON_STAR},    {"Home site", 363, 563, 5, UI_ICON_HOUSE},
+    {"Landmarks", 591, 575, 4, UI_ICON_STAR},    {"Home lot", 363, 563, 5, UI_ICON_HOUSE},
     {"Scenic trees", 714, 575, 16, UI_ICON_TREE}, {"Scenic bridge", 531, 580, 19, UI_ICON_PATH},
 };
 static const Ctl k_elevation[] = {
     {"Raise or lower a point", 352, 547, 0, UI_ICON_MOUNTAIN}, {"Raise or lower a square", 467, 547, 1, UI_ICON_MOUNTAIN},
-    {"Raise or lower an area", 587, 547, 2, UI_ICON_MOUNTAIN}, {"Analyze golf shot", 715, 547, 3, UI_ICON_EYE},
+    {"Raise or lower an area", 587, 547, 2, UI_ICON_MOUNTAIN}, {"Shot preview", 715, 547, 3, UI_ICON_EYE},
 };
 static const char *const k_elev_short[4] = {"Point", "Square", "Area", "Shot"};
 static const char *const k_building_default[9] = {"Putting Green", "Snack Bar", "Pro Shop", "Swim Club", "Driving Range",
@@ -324,35 +324,32 @@ static void dock_act(UiHud *hud, const HudSnap *s, Acts *a, int i, int on) {
   (void)s;
 }
 
-// What Esc does on the course (task-112), one step per press: close a message or the history, else fold the
-// jwe build bar, else (regular: close the open tray and cancel its tool; the folding layouts: tuck the tray),
-// else cancel the tool that is still armed behind a tucked tray, else open the Menu. Returns the number of
-// actions written; *what names the step for the log.
+// What Esc does on the course (task-112). Companion: one press closes everything that is open (the message
+// or the history, the jwe build bar, the open tray, whose tool is cancelled too); only a press with nothing
+// open opens the Menu. As shipped it did one of those steps per press. Returns the number of actions
+// written; *what names the last step for the log.
 int ui_hud_escape(UiHud *h, const HudSnap *s, HudAction *out, int max_out, const char **what) {
   Acts a = {out, 0, max_out};
-  const char *w = "menu";
+  const char *w = NULL;
   int on = active_item(s);
   if (h->msg_open || h->hist_open) {
     h->msg_open = 0;
     h->hist_open = 0;
     w = "message";
-  } else if (h->density == HUD_JWE && h->bar_open) {
+  }
+  if (h->density == HUD_JWE && h->bar_open) {
     h->bar_open = 0;
     h->tray_hidden = 1;
     w = "bar";
-  } else if (on >= 0 && on <= D_PEOPLE && !h->tray_hidden) {
-    if (h->density == HUD_REGULAR) {
-      goal(&a, HUD_GOAL_CLOSE, -1, -1);
-      w = "close";
-    } else {
-      h->tray_hidden = 1;
-      w = "tray";
-    }
-  } else if (on >= 0 && on <= D_PEOPLE) {
+  }
+  if (on >= 0 && on <= D_PEOPLE) {   // close the tray (the folding layouts tuck it) and cancel its tool
+    if (h->density != HUD_REGULAR) h->tray_hidden = 1;
     goal(&a, HUD_GOAL_CLOSE, -1, -1);
-    w = "tool";
-  } else {
+    w = "close";
+  }
+  if (!w) {
     wheel(&a, W_OPTIONS);
+    w = "menu";
   }
   if (what) *what = w;
   return a.n;
@@ -1546,7 +1543,7 @@ static void buildings_tray(UiCtx *c, UiHud *h, const HudSnap *s, SDL_Texture *co
     tl->disabled = !ui_lot_enabled(i, s->unlock, lvl, s->next_hole);
     tl->rotates = building_rotates(id) && !tl->disabled;
     tl->tip = tl->disabled ? (lvl >= 2 ? "Fully upgraded" : "Not open yet: open more holes")
-            : lvl == 1 ? (tl->rotates ? "Upgrade (can be rotated, Tab)" : "Upgrade")
+            : lvl == 1 ? (tl->rotates ? "Upgrade (Tab rotates)" : "Upgrade")
             : tl->rotates ? "Can be rotated (Tab)" : "One view only: does not rotate";
     int x = i < 5 ? 383 + 80 * i : 423 + 80 * (i - 5), y = i < 5 ? 531 : 571;
     tl->act = (HudAction){HUD_ACT_GOAL, x, y, HUD_GOAL_BUILDINGS, 0};
@@ -1655,7 +1652,7 @@ static int pro_tiles(const HudSnap *s, Tile *t) {
 // mood face, FUN_00435760) and employee strip (8 portraits, FUN_00436e50): a panel above the camera pill
 // with one row per golfer or employee, scrolling when it is long. A golfer row jumps the camera to them and
 // opens their card (HUD_ACT_SHOW); an employee row selects them, and Fire, Move and Rename appear in the tray.
-static const char *const k_job[8] = {"Club Pro", "Celebrity", "Ranger", "Marshall", "Groundskeeper", "Technician", "Soda Vendor", "Refresher"};
+static const char *const k_job[8] = {"Club Pro", "Head Pro", "Ranger", "Marshal", "Greenkeeper", "Agronomist", "Cart Server", "Bartender"};   // companion labels
 static const char *const k_mood_word[5] = {"Furious", "Unhappy", "Okay", "Happy", "Delighted"};
 
 // Tests read where the rows and buttons of the People lists are (window pixels): one line when one moves.
@@ -2167,6 +2164,30 @@ static void home_site_panel(UiCtx *c, const UiHud *h, const HudSnap *s) {
   ui_text_in(c, ui_rect(x, y, inner, hint_h), UI_TYPE_CAPTION, t->text_secondary, hint, 0);
 }
 
+// companion: names for the bench and flower bed designs instead of "Bench design 3". Benches are art groups
+// 0x208.. (FUN_00441xxx loads Scenic/benW01, box, red, round wood, backless, lovers). A flower bed design d is
+// shape d / 5 (Flowers_, SinFlowers_, WalledFlowers_ art) and colour d % 5, drawn with palette object
+// 0x81ca10 + (45 + colour) * 0x58, which the theme loader (0x440b90) fills per theme (0x5a34e0: 1 desert, 2 tropical).
+static const char *const k_bench_name[6] = {"Wooden park bench", "Carved box bench", "Red bench", "Round wood bench",
+                                            "Backless bench", "Lovers' bench"};
+// Scenic tree i is art group 0x12f + i (Plum, Dogwood, ScenicElm, JapaneseMaple, Cypress, Scenic_Tree, PeachTree).
+// The flower follows the bed's palette colour in each theme's set (standard: yellow, orange, purple, white, red).
+static void design_name(char *out, size_t n, const HudSnap *s, int tool, int i) {
+  static const char *const shape[3] = {"square bed", "curved bed", "stone-edged bed"};
+  static const char *const flower[3][5] = {
+      {"Yellow daisies", "Orange marigolds", "Purple irises", "White carnations", "Red roses"},
+      {"Red poppies", "California poppies", "Purple sage", "Blue lupines", "Pink primroses"},
+      {"Aqua hibiscus", "Orange bougainvillea", "Purple orchids", "Blue hydrangeas", "Red anthuriums"}};
+  static const char *const tree[7] = {"Flowering plum", "Dogwood", "American elm", "Japanese maple",
+                                      "Monterey cypress", "Jacaranda", "Peach tree"};
+  if (tool == 1 && i >= 0 && i < 6) snprintf(out, n, "%s", k_bench_name[i]);
+  else if (tool == 16 && i >= 0 && i < 7) snprintf(out, n, "%s", tree[i]);
+  else if (tool == 2 && i >= 0 && i < 15) {
+    int set = s->theme == 1 ? 1 : s->theme == 2 ? 2 : 0;
+    snprintf(out, n, "%s, %s", flower[set][i % 5], shape[i / 5]);
+  } else snprintf(out, n, "%s %d", tool == 1 ? "Bench design" : tool == 16 ? "Scenic tree" : "Flower bed design", i + 1);
+}
+
 static void place_panel(UiCtx *c, UiHud *h, const HudSnap *s, SDL_Texture *const *art, Acts *a, int building_tray_open) {
   int club = s->clubhouse, n = club ? 0 : s->design_n, tool = s->build_tool;
   int lot = !club && n <= 0 && tool >= 6 && tool <= 14 && building_rotates(tool);   // task-115: a lot that turns
@@ -2196,6 +2217,10 @@ static void place_panel(UiCtx *c, UiHud *h, const HudSnap *s, SDL_Texture *const
     snprintf(hint, sizeof hint, "%s, %s%s%s", s->landmark_name[s->design], cost, perk[0] ? " - " : "", perk);
   } else if(tool==0) {
     snprintf(hint,sizeof hint,"Click the course to place.");
+  } else if ((tool == 1 || tool == 2 || tool == 16) && s->design >= 0 && s->design < n) {
+    char nm[64];
+    design_name(nm, sizeof nm, s, tool, s->design);
+    snprintf(hint, sizeof hint, "%s. Click the course to place it.", nm);
   } else snprintf(hint, sizeof hint, "Pick a design, then click the course.");
   float pad = ui_s(c, 12), segh = ui_s(c, 34), g = ui_s(c, 6), cw = ui_s(c, 58), ch = ui_s(c, 58);
   if(tool==0){pad=ui_s(c,10);segh=ui_s(c,28);g=ui_s(c,4);cw=ui_s(c,92);ch=ui_s(c,84);}
@@ -2248,7 +2273,8 @@ static void place_panel(UiCtx *c, UiHud *h, const HudSnap *s, SDL_Texture *const
       const char *perk = s->landmark_perk[i & 3];
       snprintf(tip, sizeof tip, "%s%s%s%s", s->landmark_name[i],
                f & UI_DISABLED ? ": not earned yet" : "", perk[0] ? " - " : "", perk);
-    } else snprintf(tip, sizeof tip, "%s %d", title, i + 1);
+    } else if (tool == 1 || tool == 2 || tool == 16) design_name(tip, sizeof tip, s, tool, i);
+    else snprintf(tip, sizeof tip, "%s %d", title, i + 1);
     int slot = tool == 0 ? HUD_ART_PATH : tool == 1 ? HUD_ART_BENCH : tool == 2 ? HUD_ART_FLOWER : tool == 4 ? HUD_ART_LANDMARK : tool == 16 ? HUD_ART_TREE : HUD_ART_BRIDGE;
     UiRect picture=cr;
     if(tool==0) {

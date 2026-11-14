@@ -58,8 +58,7 @@ static size_t alloc_grids(int w, int h, int copy_image) {
   return total;
 }
 
-void grid_init(void) {
-  double scale = map_scale();
+static int side_for_scale(double scale) {
   int side = kOrigSide;
   if (scale > 1) {
     // Clamp before converting to int: huge or infinite settings otherwise
@@ -69,10 +68,27 @@ void grid_init(void) {
     side &= ~1;   // even, so the map keeps a centre line between tiles
     if (side > GRID_MAX_SIDE) side = GRID_MAX_SIDE;
   }
+  return side;
+}
+
+void grid_init(void) {
+  double scale = map_scale();
+  int side = side_for_scale(scale);
   g_default_side = side;
   size_t total = alloc_grids(side, side, 1);
   fprintf(stderr, "grid: map %d x %d tiles (map_scale %g), %d arrays, %u KB at %p\n", side, side, scale,
           grid_count, (unsigned)(total / 1024), (void *)g_grid[0]);
+}
+
+int grid_start_land(int n) {
+#ifndef __EMSCRIPTEN__
+  double m = mods_get_num("map.start_land", 2);   // companion default: 2x the vanilla side
+#else
+  double m = 0;
+#endif
+  if (!(m > 0)) return n * g_map_w * g_map_h / 2500;   // GEN_AREA: the remaster's share rule
+  if (m > 4) m = 4;
+  return (int)(n * m * m + 0.5);
 }
 
 void grid_resize(int w, int h) {
@@ -89,6 +105,9 @@ void grid_resize_default(void) {
   extern void path_styles_reset(void);
   path_styles_reset();
 #endif
+  // companion: read the setting again, so a size picked in Options mid-session
+  // applies to this new game (the only caller) instead of after a restart.
+  g_default_side = side_for_scale(map_scale());
   if (g_map_w != g_default_side || g_map_h != g_default_side) grid_resize(g_default_side, g_default_side);
 }
 

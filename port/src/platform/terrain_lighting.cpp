@@ -222,7 +222,8 @@ void shade(const TerrainLightingModel &model, const Config &config, const float 
   float irradianceGain = 1 / std::max(.5f,sun[1]);
   float twilight = clamp((sun[1]+.12f)/.14f,0,1);
   twilight = twilight*twilight*(3-2*twilight);
-  float skyFloor = .30f + .45f*(config.sky_day>=0?clamp(config.sky_day,0,1):twilight);
+  // companion: a lighter moon/sky floor at night (.36, was .30); the course has no lights.
+  float skyFloor = .36f + .45f*(config.sky_day>=0?clamp(config.sky_day,0,1):twilight);
   float flatDirect = std::max(0.0f,sun[1])*irradianceGain*strength;
   float skyFill = std::max(0.0f,skyFloor-flatDirect);
   float hemisphere = .5f + .5f*std::max(0.0f,normal[1]);

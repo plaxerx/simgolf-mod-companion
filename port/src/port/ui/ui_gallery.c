@@ -1147,7 +1147,7 @@ static void dlg_demo(DlgSnap *s, int kind) {
     s->max_chars = 32;
   } else if (kind == DLG_HIRE) {
     static const char *const gr[4] = {"Greeters...", "Speed up play...", "Weed Killers...", "Thirst quenchers..."};
-    static const char *const jb[8] = {"Club Pro", "Celebrity", "Ranger", "Marshall", "Groundskeeper", "Technician", "Soda Vendor", "Refresher"};
+    static const char *const jb[8] = {"Club Pro", "Head Pro", "Ranger", "Marshal", "Greenkeeper", "Agronomist", "Cart Server", "Bartender"};
     static const int wg[8] = {300, 700, 200, 300, 200, 400, 200, 500};
     for (int i = 0; i < 4; i++) snprintf(s->group[i], sizeof s->group[i], "%s", gr[i]);
     for (int i = 0; i < 8; i++) snprintf(s->job[i], sizeof s->job[i], "%s", jb[i]), s->wage[i] = wg[i];
