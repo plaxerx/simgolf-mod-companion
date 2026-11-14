@@ -50,10 +50,10 @@
 #    golfer news) stay on screen this many times longer. The game shows each
 #    for (length / 4 + 16) course ticks, which the 2x-4x speeds burn through.
 #
-# 10. Escape closes everything (-EscapeAll on|off, default on): one Esc
-#    closes the open message or history, the build bar and the open tray and
-#    cancels its tool; only an Esc with nothing open opens the Menu. As
-#    shipped, each Esc closed one of those.
+# 10. Escape opens the Menu (-EscapeAll on|off, default on): one Esc closes
+#    the open message or history, the build bar and the open tray, cancels its
+#    tool and opens the Menu, like a pause key. As shipped, each Esc closed one
+#    of those and only an Esc with nothing open opened the Menu.
 #
 # 11. Keep the weather (-KeepWeather on|off, default on): a frame that is not
 #    the course (a save, a dialog, a report) threw away the regional weather,
@@ -1459,15 +1459,22 @@ function Find-NewsHold([byte[]]$bytes, [string]$text) {
 # ui_hud_escape (ui_hud.c) did one step per Esc: close the message/history,
 # else fold the build bar, else close or tuck the tray, else cancel the tool,
 # else open the Menu. Its body (194 bytes after the active_item call) is
-# rewritten to do every step that applies at once, and the Menu only when
-# none did. Both forms are templates: 'a:name' a 4-byte address, 'r:name' a
-# rel32 target; the patched form keeps the "tool" and "tray" strings at its
-# end so the original can be rebuilt.
+# rewritten to do every step that applies at once and then open the Menu
+# (the Menu click is queued after the tray's close goal, which runs to the end
+# first). The log name stays the last step ("close" keeps the 1.5 s guard in
+# hud_frosted.c against a second close). Both forms are templates: 'a:name' a
+# 4-byte address, 'r:name' a rel32 target; the patched form keeps the "tool"
+# and "tray" strings at its end so the original can be rebuilt. The earlier
+# patch (Menu only when nothing was open) is recognised and replaced.
 $escVanilla = @('837f2c007506837f30007438c7472c00000000c7473000000000b8', 'a:msg', '85f6740289068b4424048b4c240c31e18b15', 'a:cookie',
   '39ca0f85', 'r:fail', '83c4105e5f5bc38b4f0483f911751b837f18007415c7471800000000c7470801000000b8', 'a:bar',
   'ebb885c07819837f0800742689e1ba06000000e8', 'r:goal', 'b8', 'a:tool', 'eb9b89e1ba05000000e8', 'r:wheel', 'b8', 'a:menu',
   'eb8885c97411c7470801000000b8', 'a:tray', 'e973ffffff89e1ba06000000e8', 'r:goal', 'b8', 'a:close', 'e95dffffff')
 $escPatched = @('31db837f2c007506837f30007413c7472c00000000c7473000000000bb', 'a:msg', '837f04117519837f18007413c7471800000000c7470801000000bb', 'a:bar',
+  '85c0781e837f04007407c747080100000089e1ba06000000e8', 'r:goal', 'bb', 'a:close', '89e1ba05000000e8', 'r:wheel', '85db7505bb', 'a:menu',
+  '85f67402891e8b4424048b4c240c31e13b0d', 'a:cookie', '0f85', 'r:fail', '83c4105e5f5bc3', 'a:tool', 'a:tray',
+  'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc')
+$escPatchedOld = @('31db837f2c007506837f30007413c7472c00000000c7473000000000bb', 'a:msg', '837f04117519837f18007413c7471800000000c7470801000000bb', 'a:bar',
   '85c0781e837f04007407c747080100000089e1ba06000000e8', 'r:goal', 'bb', 'a:close', '85db751189e1ba05000000e8', 'r:wheel', 'bb', 'a:menu',
   '85f67402891e8b4424048b4c240c31e13b0d', 'a:cookie', '0f85', 'r:fail', '83c4105e5f5bc3', 'a:tool', 'a:tray',
   'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc')
@@ -1503,10 +1510,10 @@ function Tpl-Build($tpl, $f, [int64]$va) {
 }
 function Find-Escape([byte[]]$bytes, [string]$text, $pe) {
   $hits = @()
-  foreach ($form in @(@($false, $escVanilla), @($true, $escPatched))) {
+  foreach ($form in @(@('vanilla', $escVanilla), @('menu', $escPatched), @('old', $escPatchedOld))) {
     foreach ($m in [regex]::Matches($text, (Tpl-Rx $form[1]))) {
       $f = Tpl-Read $bytes $form[1] $m.Index $pe
-      if ($f) { $hits += [pscustomobject]@{ Offset = $m.Index; Va = Off-ToVa $pe $m.Index; On = $form[0]; Fields = $f } }
+      if ($f) { $hits += [pscustomobject]@{ Offset = $m.Index; Va = Off-ToVa $pe $m.Index; Form = $form[0]; On = $form[0] -eq 'menu'; Fields = $f } }
     }
   }
   if ($hits.Count -ne 1) { return $null }
@@ -2322,10 +2329,12 @@ function Patch-Exe([string]$path) {
   $escWant = $EscapeAll -eq 'on'
   if (-not $esc) { Write-Warning "$name : Escape handler not recognised; Escape left alone." }
   else {
-    Write-Host "$name : Escape = $(if ($esc.On) { 'closes everything' } else { 'one step per press (as shipped)' })"
-    if ($esc.On -ne $escWant) {
+    $escSays = @{ vanilla = 'one step per press (as shipped)'; menu = 'closes everything and opens the Menu'; old = 'closes everything, Menu only with nothing open (earlier patch)' }
+    Write-Host "$name : Escape = $($escSays[$esc.Form])"
+    $escForm = if ($escWant) { 'menu' } else { 'vanilla' }
+    if ($esc.Form -ne $escForm) {
       $changes += ,@($esc.Offset, (Tpl-Build $(if ($escWant) { $escPatched } else { $escVanilla }) $esc.Fields $esc.Va))
-      Write-Host "$name : Escape -> $(if ($escWant) { 'closes everything' } else { 'one step per press (as shipped)' })"
+      Write-Host "$name : Escape -> $($escSays[$escForm])"
     }
   }
 
@@ -2598,7 +2607,7 @@ function Patch-Exe([string]$path) {
   if (-not (Test-Path -LiteralPath $backup) -and $years -and $years.Base -eq 2001 -and $land.Mode -eq 'share' -and
       $acres.State -eq 'original' -and $staff.State -eq 'ok' -and $staff.Percent -eq 100 -and
       $night -and -not $night.Moved -and (Same-Night $night.Values $nightVanilla) -and $names -and -not $names.On -and -not $names.Section -and $fix -and -not $fix.On -and
-      $news -and $news.Hold -eq 1 -and $esc -and -not $esc.On -and
+      $news -and $news.Hold -eq 1 -and $esc -and $esc.Form -eq 'vanilla' -and
       $weather -and -not $weather.Keep -and $edge -and -not $edge.On -and $lm -and $lm.Percent -eq 100 -and $dist -and $dist.Form -eq 'vanilla' -and $aim -and -not $aim.On -and
       $pop -and -not $pop.On -and $club -and -not $club.On -and $green -and -not $green.On -and $dn -and -not $dn.On -and
       $shot -and -not $shot.On -and $curve -and -not $curve.On -and $all -and -not $all.On -and -not $all.Mixed -and $ye -and -not $ye.On -and -not $ye.Mixed -and $snack -and -not $snack.On -and $gn -and -not $gn.On -and
@@ -2636,7 +2645,7 @@ function Patch-Exe([string]$path) {
   }
   if ($esc) {
     $e2 = Find-Escape $after $afterText $pe2
-    if (-not $e2 -or $e2.On -ne $escWant) { throw "$name : Escape verification failed." }
+    if (-not $e2 -or $e2.Form -ne $(if ($escWant) { 'menu' } else { 'vanilla' })) { throw "$name : Escape verification failed." }
   }
   if ($lm) {
     $l2 = Find-Landmark $after $afterText

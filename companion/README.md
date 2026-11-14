@@ -281,12 +281,13 @@ means a little less chatter. 1 restores the original. Checked in game. In a
 build from this source the same is `[ui] news_hold=3` in `data/mods.ini`
 (`hud_news_posted`, `hud_game.c`).
 
-## Escape closes everything
+## Escape opens the Menu
 
 As shipped, each Esc closed one thing: first the message, then the build bar,
 then the tray, and only then the Menu. `-EscapeAll on` (the default) makes one
-Esc close the open message or history, fold the build bar, close the open tray
-and cancel its tool. Only an Esc with nothing open opens the Menu.
+Esc close the open message or history, fold the build bar, close the open tray,
+cancel its tool and open the Menu, like a pause key in most games. The Menu
+click waits until the tray has closed.
 `-EscapeAll off` restores it. Source: `ui_hud_escape` in `ui/ui_hud.c`. Checked
 by reading back the patched code, not yet by pressing Esc in game (the test
 bridge's key events do not reach the HUD).

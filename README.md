@@ -67,7 +67,7 @@ The fork adds quality-of-life changes in two layers:
 - Upstream bugs fixed: Pixel HD zoom flicker, the dark bar while scrolling,
   weather jumping after a save or dialog, and the clubhouse flicking to old
   art when zoomed out.
-- Escape closes everything in one press (source and patcher).
+- One Escape closes everything and opens the Menu (source and patcher).
 - Money popups fade in and out (source only).
 
 ## Legal
