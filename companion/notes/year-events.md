@@ -64,7 +64,10 @@ Two hooks into `.cmpn` (+0x1380..+0x13FF):
 - **Debt gate**, the review's `cmp dword [0x571fd4], 0` (7 bytes) -> `call
   +0x1380; nop2`. With `t & 0x1FFF == 0` it does the compare and returns. On
   any other 1st it returns to just past the strike reset (the `jns` target +
-  10), so the verdict is skipped and the strikes kept.
+  10), so the verdict is skipped and the strikes kept. With `-Calendar slow`
+  (see `slow-calendar.md`) the gate's mask is `0x3FF` instead: the verdict
+  comes on every 1st, which is once per old year of play, and the two debt
+  warnings say "months".
 - **Title**, the review's `_itoa(year + base - 1, 0x821c50, 10)` call -> `call
   +0x13A0`: writes "<Month> <year>" for tick - 1 (the month that just ended)
   into the 16-byte buffer (longest "September 2199", 15 bytes). The year is the

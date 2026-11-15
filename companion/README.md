@@ -16,7 +16,7 @@ new years. The script finds the 10 display sites by byte signature (8 x
 keeps the original as `<exe>.companion-backup`, and checks its own work.
 
 - Another year: `Apply-CompanionPatches.ps1 -StartYear 2031`
-- Undo everything: `Apply-CompanionPatches.ps1 -StartYear 2001 -StartLand share -StaffRadius 100 -StaffNames off -NightTint vanilla -Celebrities vanilla -ProGolfers vanilla -PixelHdFix off -NewsHold 1 -EscapeAll off -KeepWeather off -LandmarkRadius 100 -WhiteFlowers off -Distances vanilla -Labels off -ProAim off -ScrollEdge off -NewsPopup off -GreenRoll off -ShotFix off -AllShots off -YearEvents yearly -CurveFix off -ClubCache off -RedFlowers off -DesignNames off -SnackPath needed -GolferNames vanilla -StaffMax 20 -StaffSpeed 100 -TourneyBuild open -TourneyWages paid` (gives back the byte-identical program and the original data files)
+- Undo everything: `Apply-CompanionPatches.ps1 -StartYear 2001 -StartLand share -StaffRadius 100 -StaffNames off -NightTint vanilla -Celebrities vanilla -ProGolfers vanilla -PixelHdFix off -NewsHold 1 -EscapeAll off -KeepWeather off -LandmarkRadius 100 -WhiteFlowers off -Distances vanilla -Labels off -ProAim off -ScrollEdge off -NewsPopup off -GreenRoll off -ShotFix off -AllShots off -YearEvents yearly -CurveFix off -ClubCache off -RedFlowers off -DesignNames off -SnackPath needed -GolferNames vanilla -StaffMax 20 -StaffSpeed 100 -TourneyBuild open -TourneyWages paid -Calendar vanilla` (gives back the byte-identical program and the original data files)
 - Preview: `Apply-CompanionPatches.ps1 -DryRun`
 - Re-run after every game update, since an update replaces the program (and
   with it every fix below, the Pixel HD flicker fix included).
@@ -580,7 +580,11 @@ dates, and saves are fully compatible both ways. One exception is on purpose:
 **the board's debt verdict stays yearly**. Its warnings ("You have two years to
 return to positive cash") and its strike count (three strikes and the board
 ends your contract) still happen on March 1 only. Monthly strikes would fire
-you after three months in debt.
+you after three months in debt. With the slow calendar (next section, on by
+default) a month lasts as long as a whole old year, so the verdict comes on
+every 1st instead, and its warnings read "You have two months to get back in
+the black." and "Just one more month to get out of debt." Three strikes still
+take three old years of play.
 
 The code is 128 bytes in the `.cmpn` section (+0x1380: the review title and the
 March-only debt gate), plus seven byte edits in the main loop and the review,
@@ -589,6 +593,40 @@ three strings in `image\golf.bin` and one in the program. Details in
 in April and May, the invitation in May, the debt verdict on March 1 only;
 `yearly` restores the byte-identical files). `-YearEvents yearly` restores the
 shipped schedule. Patcher only.
+
+## Slow calendar: a month lasts a whole old year
+
+With `-Calendar slow` (the default) the calendar runs 8x slower: one month
+takes as long to play as the original game's whole operating year (March to
+October). Everything that ran on play time keeps its real-time pace:
+
+- **Wages** are paid exactly as often in real time as before (every
+  `1024 / (difficulty + 2)` old ticks), so a calendar month now holds 8x the
+  paydays. The difficulty screen says so: "2x8 per month" ... "5x8 per month".
+- Golfers, staff, weeds, animations, timed events, history samples and the
+  mid-month autosave keep their real-time cadence.
+- What belongs to the calendar follows the calendar: the date, seasons and
+  weather, the 1st-of-month events (the monthly autosave, 2 % interest on debt,
+  stat fading, path warnings) and the yearly events. So interest and the 1st's
+  events come 8x less often in play time. With `-YearEvents monthly` the board's
+  review comes on every 1st, which is once per old year of play.
+- Tournaments run on play time, so the calendar barely moves during one, and
+  its wages are the same real-time wages as before. `-TourneyWages unpaid`
+  (above) stops them while a tournament is on.
+
+Saves keep their date and load in either mode. Switching a running career
+from slow back to vanilla works, but timers that were set in slow mode (for
+example a golfer's next decision) can wait longer than usual once.
+
+The saved clock is still the calendar. A fast counter in the `.cmpn` section
+(+0x4040), kept as `clock x 8 + sub-step`, drives the 129 play-time reads; a
+hook in the main loop advances it and derives the clock. Four constants are
+scaled (the 1st-of-month gate, the tutorial's dates), plus two debt strings
+in `image\golf.bin` and the payroll label in the program. The section grows to
+20 KB (+0x4000 to +0x407F). Details in `notes\slow-calendar.md`. Tested on a
+scratch copy of the game (wage timing, the 1st of the month, autosaves, a new
+career, a save loaded in both modes). `-Calendar vanilla` restores the
+shipped clock. Patcher only.
 
 ## Golfer names: real names
 
