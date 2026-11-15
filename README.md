@@ -68,6 +68,9 @@ The fork adds quality-of-life changes in two layers:
   weather jumping after a save or dialog, and the clubhouse flicking to old
   art when zoomed out.
 - One Escape closes everything and opens the Menu (source and patcher).
+- Smooth scrolling follows the keys and the drag with no trail and keeps its
+  frame rate while the view moves (about 10 frames a second as shipped).
+- Rain and storms a quarter as often.
 - Money popups fade in and out (source only).
 
 ## Legal

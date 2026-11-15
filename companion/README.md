@@ -16,7 +16,7 @@ new years. The script finds the 10 display sites by byte signature (8 x
 keeps the original as `<exe>.companion-backup`, and checks its own work.
 
 - Another year: `Apply-CompanionPatches.ps1 -StartYear 2031`
-- Undo everything: `Apply-CompanionPatches.ps1 -StartYear 2001 -StartLand share -StaffRadius 100 -StaffNames off -NightTint vanilla -Celebrities vanilla -ProGolfers vanilla -PixelHdFix off -NewsHold 1 -EscapeAll off -KeepWeather off -LandmarkRadius 100 -WhiteFlowers off -Distances vanilla -Labels off -ProAim off -ScrollEdge off -NewsPopup off -GreenRoll off -ShotFix off -AllShots off -YearEvents yearly -CurveFix off -ClubCache off -RedFlowers off -DesignNames off -SnackPath needed -GolferNames vanilla -StaffMax 20 -StaffSpeed 100 -TourneyBuild open -TourneyWages paid -Calendar vanilla` (gives back the byte-identical program and the original data files)
+- Undo everything: `Apply-CompanionPatches.ps1 -StartYear 2001 -StartLand share -StaffRadius 100 -StaffNames off -NightTint vanilla -Celebrities vanilla -ProGolfers vanilla -PixelHdFix off -NewsHold 1 -EscapeAll off -KeepWeather off -LandmarkRadius 100 -WhiteFlowers off -Distances vanilla -Labels off -ProAim off -ScrollEdge off -NewsPopup off -GreenRoll off -ShotFix off -AllShots off -YearEvents yearly -CurveFix off -ClubCache off -RedFlowers off -DesignNames off -SnackPath needed -GolferNames vanilla -StaffMax 20 -StaffSpeed 100 -TourneyBuild open -TourneyWages paid -Calendar vanilla -LiveScroll off -Rain 100` (gives back the byte-identical program and the original data files)
 - Preview: `Apply-CompanionPatches.ps1 -DryRun`
 - Re-run after every game update, since an update replaces the program (and
   with it every fix below, the Pixel HD flicker fix included).
@@ -151,6 +151,13 @@ in the remaster's program, each in its own slot:
   "oriental house" -> "tea house" ("a traditional tea house");
 - celebrity types "fitness guru" -> "influencer", "beauty" -> "icon"; the
   investors Don Trump, L.Probst and B.Gates -> E.Muskrat, J.Bezzos and M.Zuck;
+- the visitors and investors that went by initials get names: the CEO
+  J.P.Bigdome -> Max Profit, the heiress Ivana Richman -> Goldie Banks, the
+  commissioner I.M.Picky -> Nick Picker (in golf.bin and in their golfer
+  files, `game\Themes\Standard\*.glf`, name field only; the file names
+  stay), and the investors J.W.Bigguy -> Bill Fold, J.P.Bigwig -> Rich Fields,
+  J.W.Bigshot -> Grant Money, E.F.Mutton -> Ira Roth. A save made earlier may
+  keep a visitor's old name until that visitor is loaded again;
   the fallback celebrity "Bill Clinton" -> "Bubba Klinton"; "Rocky Mtns." ->
   "Rocky Mountains"; the skill "Mental Toughness" -> "Composure";
 - remaster tooltips: "Analyze golf shot" -> "Shot preview", "Upgrade (can be
@@ -681,6 +688,60 @@ offer to the results):
 
 Both are small hooks in the `.cmpn` section (+0x12A0, +0x12E0). How
 tournaments and the SGA's standards work: `notes/tournaments.md`.
+
+## Live scrolling: the view follows the input, at full frame rate
+
+`-LiveScroll on` (the default), with the remaster's smooth scrolling (the
+patcher turns "Smooth scrolling" back on in `options.ini` if it was off).
+Research and measurements: `notes/scrolling.md`.
+
+As shipped, smooth scrolling had two problems:
+
+- **Lag.** golf draws the course about 10 times a second. The presenter eased
+  each new picture into place over one game frame, so the view ran 140-190 ms
+  behind the keys or the mouse and kept moving after the input stopped.
+- **Frame rate.** A new course picture costs the render thread 100-150 ms on a
+  big course (terrain, relief shadows, reflections, the guard band), more than
+  golf's frame period. With a moving camera every presented frame was a new
+  picture, so the view ran at about 10 frames a second however fast the PC.
+
+Now the render thread works out the camera itself on every presented frame
+(pan keys: the last key tick plus speed x time; drag: the cursor's position
+right now, through the game's own mapping) and places golf's last picture
+there. While the view moves it keeps that picture and slides it (the guard
+band and the overscanned sprites cover a screen in every direction); it takes
+a new picture when the view stops, when the slide has used most of the guard
+band, after 0.8 s, or while the left mouse button is down. On a key or button
+release the game takes over the camera that was on screen, so nothing snaps
+back. Camera moves golf makes itself (shot follow, jumps) are as before.
+
+Measured on a copy (158 x 158 map, 1600 x 900 window, a 2 s key pan):
+
+| | as shipped | live |
+|---|---|---|
+| presented frames while moving | 9-16 a second | 100-140 a second |
+| view behind the input | 120-240 ms | 0-40 ms |
+| frames over 50 ms in the pan | all of them | about 3 (when a new picture is taken) |
+
+What is left: about every 0.7 s of a long pan one frame takes 100-150 ms (the
+new picture), a short skip; golfers stand still between pictures while the
+view moves. A drag was tested with the cursor running ahead of the mouse
+events (310 frames, none backwards, the release kept the camera on screen),
+and the real cursor's mapping matched the game's own at 5 of 5 points. The
+code is C (`src/live_scroll.c`, built by `src/build_live.py` with the MSVC
+x86 compiler into `live_scroll.json`); the patcher needs only the json.
+`-LiveScroll off` restores the four call sites.
+
+## Less rain
+
+`-Rain 25` (the default; percent of the shipped odds, `-Rain 100` restores).
+The remaster's regional weather draws each weather spell (about 3 minutes)
+from `data\weather-climate.csv`: clear, cloudy, rain and storm odds per place
+and season. Rain and storm odds are cut to a quarter and clear skies get the
+difference (Carolina in summer: 24 + 10 of 100 -> 6 + 3; San Diego in summer,
+4 + 1, is already at the table's floor of 1 + 1). The original table is kept
+as `weather-climate.csv.companion-backup`. A game update that replaces the
+table is picked up on the next run.
 
 ## Map size
 
