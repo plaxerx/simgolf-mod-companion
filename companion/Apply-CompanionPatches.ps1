@@ -50,10 +50,10 @@
 #    golfer news) stay on screen this many times longer. The game shows each
 #    for (length / 4 + 16) course ticks, which the 2x-4x speeds burn through.
 #
-# 10. Escape closes everything (-EscapeAll on|off, default on): one Esc
-#    closes the open message or history, the build bar and the open tray and
-#    cancels its tool; only an Esc with nothing open opens the Menu. As
-#    shipped, each Esc closed one of those.
+# 10. Escape opens the Menu (-EscapeAll on|off, default on): one Esc closes
+#    the open message or history, the build bar and the open tray, cancels its
+#    tool and opens the Menu, like a pause key. As shipped, each Esc closed one
+#    of those and only an Esc with nothing open opened the Menu.
 #
 # 11. Keep the weather (-KeepWeather on|off, default on): a frame that is not
 #    the course (a save, a dialog, a report) threw away the regional weather,
@@ -83,8 +83,12 @@
 #    image\golf.bin and the program ("wbs" -> "waste bunkers", "Marshall" ->
 #    "Marshal", Celebrity -> Head Pro, ...), landmark, celebrity, investor and
 #    place names, the famous-golfer name lists -> the 2020s tour, and a small
-#    data mod (mods\companion_labels) for building and skill names. See
-#    notes\label-inventory.md.
+#    data mod (mods\companion_labels) for building and skill names. The
+#    visitors and investors with initials get names: J.P.Bigdome -> Max
+#    Profit, Ivana Richman -> Goldie Banks, I.M.Picky -> Nick Picker (also in
+#    their golfer files under game\Themes\Standard), J.W.Bigguy -> Bill Fold,
+#    J.P.Bigwig -> Rich Fields, J.W.Bigshot -> Grant Money, E.F.Mutton -> Ira
+#    Roth. See notes\label-inventory.md.
 #
 # 16. Pro free aim (-ProAim shift|off, default shift): hold Shift while
 #    aiming the pro's shot to aim at the exact point under the mouse instead of a tile centre or corner (a 25-yard grid).
@@ -158,7 +162,8 @@
 #    map's stat layers. The calendar, seasons, wages and income are
 #    unchanged, and so are saves. The board's debt warnings and strikes stay on
 #    March 1 only, so three years in debt still ends the career, not three
-#    months. Code in the .cmpn section. See notes\year-events.md.
+#    months (with -Calendar slow: every 1st, once per old year of play).
+#    Code in the .cmpn section. See notes\year-events.md.
 #
 # 27. Curve fix (-CurveFix on|off, default on): draws and fades launch faster
 #    than a straight shot, by 1 + 16/(400 - yards) past 250 yards. Golf capped
@@ -200,9 +205,30 @@
 #    once a month, i.e. as often in play time as before. Saves keep their date.
 #    Code in the .cmpn section. See notes\slow-calendar.md.
 #
+# 34. Live scrolling (-LiveScroll on|sync|off, default on) and the ground kept
+#    in step. Two things, in one piece of code (src\live_scroll.c, built into
+#    live_scroll.json next to this script, placed in the .cmpn section):
+#    - an upstream flicker: while the camera moves, about one new course
+#      picture in ten was shown with the ground of the picture before it, a
+#      camera step away from the trees and buildings standing on it. Ground
+#      and picture are now taken together ("sync" is this alone).
+#    - "on": with the remaster's smooth scrolling the view follows the pan
+#      keys and the drag on every presented frame instead of easing in 120-240
+#      ms behind them. It slides the picture on screen no further than
+#      -ScrollLead percent of the view (default 12, 0 to 70) past its edge,
+#      because only bare ground is known there. "on" turns "Smooth scrolling"
+#      on in options.ini if it was off.
+#    See notes\scrolling.md.
+#
+# 35. Less rain (-Rain 25, percent of the shipped odds, 1 to 100; 100 = as
+#    shipped): the remaster's regional weather picks each weather spell from
+#    data\weather-climate.csv (clear / cloudy / rain / storm odds per place
+#    and season). Rain and storm odds are cut to that share and the difference
+#    goes to clear skies. The original file is kept next to it.
+#
 # Usage (PowerShell):
 #   .\Apply-CompanionPatches.ps1                                # 2021, 2x vanilla starting side
-#   .\Apply-CompanionPatches.ps1 -StartYear 2001 -StartLand share -StaffRadius 100 -StaffNames off -NightTint vanilla -Celebrities vanilla -ProGolfers vanilla -PixelHdFix off -NewsHold 1 -EscapeAll off -KeepWeather off -LandmarkRadius 100 -WhiteFlowers off -Distances vanilla -Labels off -ProAim off -ScrollEdge off -NewsPopup off -ClubCache off -RedFlowers off -GreenRoll off -DesignNames off -ShotFix off -AllShots off -SnackPath needed -YearEvents yearly -CurveFix off -GolferNames vanilla -StaffMax 20 -StaffSpeed 100 -TourneyBuild open -TourneyWages paid -Calendar vanilla   # unpatched
+#   .\Apply-CompanionPatches.ps1 -StartYear 2001 -StartLand share -StaffRadius 100 -StaffNames off -NightTint vanilla -Celebrities vanilla -ProGolfers vanilla -PixelHdFix off -NewsHold 1 -EscapeAll off -KeepWeather off -LandmarkRadius 100 -WhiteFlowers off -Distances vanilla -Labels off -ProAim off -ScrollEdge off -NewsPopup off -ClubCache off -RedFlowers off -GreenRoll off -DesignNames off -ShotFix off -AllShots off -SnackPath needed -YearEvents yearly -CurveFix off -GolferNames vanilla -StaffMax 20 -StaffSpeed 100 -TourneyBuild open -TourneyWages paid -Calendar vanilla -LiveScroll off -Rain 100   # unpatched
 #   .\Apply-CompanionPatches.ps1 -DryRun                        # report only
 #   .\Apply-CompanionPatches.ps1 -MapScale 10                   # also set new-course size
 
@@ -243,6 +269,9 @@ param(
   [ValidateSet('locked', 'open')][string]$TourneyBuild = 'locked',
   [ValidateSet('unpaid', 'paid')][string]$TourneyWages = 'unpaid',
   [ValidateSet('slow', 'vanilla')][string]$Calendar = 'slow',
+  [ValidateSet('on', 'sync', 'off')][string]$LiveScroll = 'on',
+  [ValidateRange(0, 70)][int]$ScrollLead = 12,
+  [ValidateRange(1, 100)][int]$Rain = 25,
   [switch]$DryRun,
   [switch]$Force
 )
@@ -610,7 +639,7 @@ function Night-Changes([byte[]]$bytes, $night, $want, $pe) {
 # saved with the game.
 $hookRx = '\x6B\xF8\x4C\xE8([\x00-\xFF]{4})\x89\xC6\xE8([\x00-\xFF]{4})\x80\x7C\x38\x2A\x00'
 $sectionName = '.cmpn'
-$sectionSize = 0x5000   # 0x1000 before news popups, 0x2000 before golfer names, 0x4000 before the slow calendar; an older section is grown in place
+$sectionSize = 0x8000   # 0x1000 before news popups, 0x2000 before golfer names, 0x4000 before the slow calendar, 0x5000 before live scrolling; an older section is grown in place
 $sectionFlags = [uint32]3758096416   # 0xE0000020: code, execute, read, write
 
 $maleNames = @('James','Marcus','Diego','Kenji','Raj','Omar','Liam','Noah','Mateo','Ethan','Lucas','Mason','Elijah','Jamal',
@@ -1459,15 +1488,22 @@ function Find-NewsHold([byte[]]$bytes, [string]$text) {
 # ui_hud_escape (ui_hud.c) did one step per Esc: close the message/history,
 # else fold the build bar, else close or tuck the tray, else cancel the tool,
 # else open the Menu. Its body (194 bytes after the active_item call) is
-# rewritten to do every step that applies at once, and the Menu only when
-# none did. Both forms are templates: 'a:name' a 4-byte address, 'r:name' a
-# rel32 target; the patched form keeps the "tool" and "tray" strings at its
-# end so the original can be rebuilt.
+# rewritten to do every step that applies at once and then open the Menu
+# (the Menu click is queued after the tray's close goal, which runs to the end
+# first). The log name stays the last step ("close" keeps the 1.5 s guard in
+# hud_frosted.c against a second close). Both forms are templates: 'a:name' a
+# 4-byte address, 'r:name' a rel32 target; the patched form keeps the "tool"
+# and "tray" strings at its end so the original can be rebuilt. The earlier
+# patch (Menu only when nothing was open) is recognised and replaced.
 $escVanilla = @('837f2c007506837f30007438c7472c00000000c7473000000000b8', 'a:msg', '85f6740289068b4424048b4c240c31e18b15', 'a:cookie',
   '39ca0f85', 'r:fail', '83c4105e5f5bc38b4f0483f911751b837f18007415c7471800000000c7470801000000b8', 'a:bar',
   'ebb885c07819837f0800742689e1ba06000000e8', 'r:goal', 'b8', 'a:tool', 'eb9b89e1ba05000000e8', 'r:wheel', 'b8', 'a:menu',
   'eb8885c97411c7470801000000b8', 'a:tray', 'e973ffffff89e1ba06000000e8', 'r:goal', 'b8', 'a:close', 'e95dffffff')
 $escPatched = @('31db837f2c007506837f30007413c7472c00000000c7473000000000bb', 'a:msg', '837f04117519837f18007413c7471800000000c7470801000000bb', 'a:bar',
+  '85c0781e837f04007407c747080100000089e1ba06000000e8', 'r:goal', 'bb', 'a:close', '89e1ba05000000e8', 'r:wheel', '85db7505bb', 'a:menu',
+  '85f67402891e8b4424048b4c240c31e13b0d', 'a:cookie', '0f85', 'r:fail', '83c4105e5f5bc3', 'a:tool', 'a:tray',
+  'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc')
+$escPatchedOld = @('31db837f2c007506837f30007413c7472c00000000c7473000000000bb', 'a:msg', '837f04117519837f18007413c7471800000000c7470801000000bb', 'a:bar',
   '85c0781e837f04007407c747080100000089e1ba06000000e8', 'r:goal', 'bb', 'a:close', '85db751189e1ba05000000e8', 'r:wheel', 'bb', 'a:menu',
   '85f67402891e8b4424048b4c240c31e13b0d', 'a:cookie', '0f85', 'r:fail', '83c4105e5f5bc3', 'a:tool', 'a:tray',
   'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc')
@@ -1503,10 +1539,10 @@ function Tpl-Build($tpl, $f, [int64]$va) {
 }
 function Find-Escape([byte[]]$bytes, [string]$text, $pe) {
   $hits = @()
-  foreach ($form in @(@($false, $escVanilla), @($true, $escPatched))) {
+  foreach ($form in @(@('vanilla', $escVanilla), @('menu', $escPatched), @('old', $escPatchedOld))) {
     foreach ($m in [regex]::Matches($text, (Tpl-Rx $form[1]))) {
       $f = Tpl-Read $bytes $form[1] $m.Index $pe
-      if ($f) { $hits += [pscustomobject]@{ Offset = $m.Index; Va = Off-ToVa $pe $m.Index; On = $form[0]; Fields = $f } }
+      if ($f) { $hits += [pscustomobject]@{ Offset = $m.Index; Va = Off-ToVa $pe $m.Index; Form = $form[0]; On = $form[0] -eq 'menu'; Fields = $f } }
     }
   }
   if ($hits.Count -ne 1) { return $null }
@@ -1774,6 +1810,18 @@ $labelBin = @(
   @(0x4c383c, 'Don Trump', 'E.Muskrat'),
   @(0x4c3824, 'L.Probst', 'J.Bezzos'),
   @(0x4c3854, 'B.Gates', 'M.Zuck'),
+  # the visitors (CEO, heiress, commissioner: the table name, and the built-in golfer records' 16-byte name field)
+  # and the other investors: initials -> a name
+  @(0x4c385c, 'J.P.Bigdome', 'Max Profit'),
+  @(0x4c3874, 'I.M.Picky', 'Nick Picker'),
+  @(0x4e0908, 'I.M. Picky', 'Nick Picker'),
+  @(0x4e0b38, 'Ivana Richman', 'Goldie Banks'),
+  @(0x4e0d68, 'J.P.Bigdome', 'Max Profit'),
+  @(0x4e1b94, 'Ivana Richman', 'Goldie Banks'),
+  @(0x4c3818, 'J.W.Bigguy', 'Bill Fold'),
+  @(0x4c3830, 'J.P.Bigwig', 'Rich Fields'),
+  @(0x4c3848, 'J.W.Bigshot', 'Grant Money'),
+  @(0x4c3868, 'E.F.Mutton', 'Ira Roth'),
   @(0x4c3900, 'Bill Clinton', 'Bubba Klinton'),
   @(0x4c1f94, 'Rocky Mtns.', 'Rocky Mountains'),
   @(0x4c96e8, 'Snack Bar', 'Snack Shack'),         # the course themes copy this into the building row
@@ -1888,9 +1936,34 @@ function Set-LabelMod([bool]$on) {
   }
 }
 
+# The three visitors are golfer files too (game\Themes\Standard\*.glf, loaded into golfer slots 0x4d..0x4f):
+# the 16-byte name field at +0x10 of the golfer record. Rewritten in place; the file names stay.
+$vipFiles = @(@('J.P.Bigdome.glf', 'J.P.Bigdome', 'Max Profit'), @('Ivana Richman.glf', 'Ivana Richman', 'Goldie Banks'),
+  @('I.M.Picky.glf', 'I.M.Picky', 'Nick Picker'))
+function Set-VipNames([bool]$on) {
+  foreach ($v in $vipFiles) {
+    $path = Join-Path $InstallDir "game\Themes\Standard\$($v[0])"
+    if (-not (Test-Path -LiteralPath $path)) { Write-Warning "$($v[0]) not found under game\Themes\Standard; name left alone."; continue }
+    $b = [IO.File]::ReadAllBytes($path)
+    if ($b.Length -lt 0x230) { Write-Warning "$($v[0]) : not a golfer file; left alone."; continue }
+    $have = $latin1.GetString($b, 0x10, 16); $z = $have.IndexOf([char]0)
+    if ($z -ge 0) { $have = $have.Substring(0, $z) }
+    $want = if ($on) { $v[2] } else { $v[1] }
+    if ($have -ceq $want) { Write-Host "$($v[0]) : name = $want"; continue }
+    if ($have -cne $v[1] -and $have -cne $v[2]) { Write-Warning "$($v[0]) : name '$have' not recognised; left alone."; continue }
+    if ($DryRun) { Write-Host "$($v[0]) : would rename $have -> $want (dry run)."; continue }
+    $field = New-Object byte[] 16
+    $nb = $latin1.GetBytes($want); [Array]::Copy($nb, 0, $field, 0, $nb.Length)
+    [Array]::Copy($field, 0, $b, 0x10, 16)
+    [IO.File]::WriteAllBytes($path, $b)
+    Write-Host "$($v[0]) : name $have -> $want"
+  }
+}
+
 function Set-Labels([string]$mode) {
   $on = $mode -eq 'on'
   Set-LabelMod $on
+  Set-VipNames $on
   $files = New-Object System.Collections.ArrayList
   [void]$files.Add(@((Join-Path $InstallDir 'image\golf.bin'), $true))
   foreach ($x in $exes) { [void]$files.Add(@($x, $false)) }
@@ -2237,6 +2310,209 @@ function Find-GolferNames([byte[]]$bytes, [string]$text, $pe) {
   return $r
 }
 
+# ------------------------------------------------------------ live scrolling
+# notes\scrolling.md. The code is C (src\live_scroll.c), built once by
+# src\build_live.py into live_scroll.json: the bytes, the offsets of the
+# absolute addresses in them (relocs: the blob's address is added here), its
+# entry stubs, the four call sites and the bytes of the program it relies on
+# (signature: 0.1.37). It goes to .cmpn +0x5000.
+#   render_main: call upload(t, now)       -> call frame stub (ls_frame takes the picture, or keeps it, and places it)
+#   pan key up (two sites), drag button up -> call key / button stub (ls_adopt, then the replaced store)
+$lvAt = 0x5000
+$lvSpec = $null
+$lvFile = Join-Path $PSScriptRoot 'live_scroll.json'
+if (Test-Path -LiteralPath $lvFile) {
+  $lvSpec = [IO.File]::ReadAllText($lvFile) | ConvertFrom-Json
+  if ($lvAt + $lvSpec.size -gt $sectionSize) { throw "live_scroll.json is too big for the $sectionName section." }
+} else { Write-Warning "live_scroll.json not found next to the script; live scrolling left alone." }
+
+function Lv-Code([int64]$secVa) {
+  $b = Hex-Bytes $lvSpec.hex; $base = $secVa + $lvAt
+  foreach ($r in $lvSpec.relocs) { [Array]::Copy([BitConverter]::GetBytes([uint32]([BitConverter]::ToUInt32($b, $r) + $base)), 0, $b, $r, 4) }
+  foreach ($c in $lvSpec.calls) { [Array]::Copy((Rel32 ($base + $c[0] + 4) ([int64]$c[1])), 0, $b, $c[0], 4) }
+  return ,$b
+}
+
+function Lv-SiteBytes($site, [bool]$on, [int64]$secVa) {
+  if (-not $on) { return ,(Hex-Bytes $site.original) }
+  return ,[byte[]](@(0xE8) + (Rel32 ([int64]$site.va + 5) ($secVa + $lvAt + $lvSpec.entries.($site.stub))) + (Hex-Bytes $site.pad))
+}
+
+# $null: not this program version (or a site holds something else). On: every site calls into the section.
+  # the settings: fields of ls_state
+  $st = [int]$lvSpec.entries.state
+  [Array]::Copy([BitConverter]::GetBytes([int]$(if ($LiveScroll -eq 'on') { 1 } else { 0 })), 0, $b, $st + [int]$lvSpec.fields.enabled, 4)
+  [Array]::Copy([BitConverter]::GetBytes([int]$ScrollLead), 0, $b, $st + [int]$lvSpec.fields.lead_pct, 4)
+function Find-LiveScroll([byte[]]$bytes, $pe) {
+  if (-not $lvSpec) { return $null }
+  foreach ($g in $lvSpec.signature) {
+    $o = Va-ToOff $pe ([int64]$g.va); $w = Hex-Bytes $g.hex
+    if ($o -lt 0 -or (Compare-Object ([byte[]]$bytes[$o..($o + $w.Length - 1)]) $w -SyncWindow 0)) { return $null }
+  }
+  $sec = $pe.Sections | Where-Object { $_.Name -eq $sectionName }
+  $on = 0; $sites = @()
+  foreach ($st in $lvSpec.sites) {
+    $o = Va-ToOff $pe ([int64]$st.va); $orig = Hex-Bytes $st.original; $pad = Hex-Bytes $st.pad
+    if ($o -lt 0) { return $null }
+    $have = [byte[]]$bytes[$o..($o + $orig.Length - 1)]
+    if (Compare-Object $have $orig -SyncWindow 0) {
+      # a call into the section's live scrolling part (this build's or an earlier one's), then the padding
+      $t = [int64]$st.va + 5 + [BitConverter]::ToInt32($bytes, $o + 1)
+      $lo = if ($sec) { [int64]$pe.Base + $sec.Rva + $lvAt } else { 0 }
+      if (-not $sec -or $have[0] -ne 0xE8 -or $t -lt $lo -or $t -ge [int64]$pe.Base + $sec.Rva + $sec.RawSize) { return $null }
+      if ($pad.Length -and (Compare-Object ([byte[]]$have[5..($have.Length - 1)]) $pad -SyncWindow 0)) { return $null }
+      $on++
+    }
+    $sites += ,@($o, $st)
+  }
+  $r = [pscustomobject]@{ Sites = $sites; On = ($on -eq $sites.Count); Mixed = ($on -gt 0 -and $on -lt $sites.Count); Mode = 'off'; Lead = -1 }
+  if ($r.On) {   # which of the two: the settings in the section (this build's layout; an older build reads as live)
+    $r.Mode = 'on'
+    $so = $sec.Raw + $lvAt + [int]$lvSpec.entries.state
+    if ($so + 0x80 -le $bytes.Length -and [BitConverter]::ToUInt32($bytes, $so) -eq 0x3143534c) {
+      if ([BitConverter]::ToInt32($bytes, $so + [int]$lvSpec.fields.enabled) -eq 0) { $r.Mode = 'sync' }
+      $r.Lead = [BitConverter]::ToInt32($bytes, $so + [int]$lvSpec.fields.lead_pct)
+    }
+  }
+  return $r
+}
+function Lv-Says([string]$mode, [int]$lead) {
+  if ($mode -eq 'on') { return "live (follows the input$(if ($lead -ge 0) { ", uncovers up to $lead%" })), ground in step" }
+  if ($mode -eq 'sync') { return 'as shipped, ground in step' }
+  return 'as shipped'
+}
+
+# ----------------------------------------------------------- slow calendar
+# One clock, DAT_00834170, saved with the game: +1 per main-loop pass, 1024 a
+# month, 8 months a year. Everything reads it: the date, the 1st-of-month and
+# yearly blocks, seasons and weather, but also wages (every 0x400 / (difficulty
+# + 2) ticks), animations (tick % frames), blinking, golfer and staff timers
+# (stored ticks compared later). To make a month 8x longer without slowing the
+# rest, the saved clock becomes the calendar and a second, fast counter F at
+# .cmpn +0x4040 takes over the real-time reads:
+#   - the increment (exe 0x6005e1e9, 33 bytes) -> call +0x4000:
+#     F = clock * 8 + (F & 7) + 1 (+1 more to even while game flag 8 is set,
+#     as golf does with the clock), clock = F >> 3. F follows the clock after
+#     a load or a new career, so stored timers stay in step with saves.
+#   - 129 reads that are not about the date point at F instead (one disp32
+#     each; '+' = the clock's second byte, test byte [0x834171], 2).
+#   - the 1st-of-month block (0x6005ec4b) reads F with masks 0x1FFF: it runs
+#     once per (8x longer) month; the July 1 / March 1 tests inside it stay on
+#     the clock. The 16th (AutoSave1) reads F as before: every 1024 passes.
+#   - the tutorial's one-off date messages compare F: 0x20 (unchanged), May 1
+#     0x1400 -> 0xA000, 1 year + 2 months 0x2200 -> 0x11000.
+# Left on the clock: the date and its text, the ledger and history indexes,
+# the board's review, seasons and the remaster's weather, first-year and
+# scenario checks, the save slots' dates.
+$scAt = 0x4000; $scF = 0x4040; $scEnd = 0x4080
+$scHook = 0x5E1E9                                   # RVAs in the 0.1.36/0.1.37 program
+$scHookVanilla = Hex-Bytes 'a17041830040a370418300f605b8e7590008740d89c183e10101c1890d70418300'
+$scSites = ('35d20 362a3 36a8b+ 372c3 37843 492d5 4941c 49790 49f79 5222a 53b26 54a8a 54b68 54cea 54d71 54e02 54e8a 54fdc 55060 ' +
+  '550ee 55179 553ab 55422 55614 556e9 55a54 56070 56747 570d7 57268 57812 598f5 59c8c 59df1 5a9c1 5aca3 5b193 5c424 5cb33 ' +
+  '5cc18 5d534 5e17e 5e233 5e4a7 5e4b3 5e68f 5ec17 5ec4c 6142c 63f5a 63f85 6af0f 6faed 6fbc8 6fd68 70018 70310 70424 7054d ' +
+  '70a03 7160c 728b9 72c43 73b9c 73d8b 7bb82 7dd26 80d05 80e39 810c8 8112b 81354 8139c 866ca c32f7 c4829 ce3c0 cf225 d20c1 ' +
+  'd2726 d28e1 d2b8a d2c02 d2c8d d2ceb d2d72 d2ee6 d3211 d32d1 d33f7 d34c7 d35c1 d365d d3753 d37c2 d3858 d3944 d399a d3f96 ' +
+  'd3ffb d407f d40f8 d419f d4303 d4392 d4427 d4493 d44e2 d4569 d45b5 d466f d46ef d47d5 d4893 d4901 d4962 d49cc d4a04 d4a91 ' +
+  'd4b17 d735b d8b5e db386 dda37 ddd13 df66d df8df e3a68 1e3157').Split(' ')
+# (RVA, as shipped, slow): the 1st-of-month masks and the tutorial's dates
+$scConsts = @(
+  @(0x5EC54, [byte[]](0xFF, 0x03), [byte[]](0xFF, 0x1F)),
+  @(0x5EC5E, [byte[]](0xFF, 0x03), [byte[]](0xFF, 0x1F)),
+  @(0x63F8A, [byte[]](0x00, 0x22, 0x00, 0x00), [byte[]](0x00, 0x10, 0x01, 0x00)),
+  @(0xCF22B, [byte[]](0x00, 0x14, 0x00, 0x00), [byte[]](0x00, 0xA0, 0x00, 0x00)))
+$scTpl = @('a170418300c1e0038b0d', 'a:f', '83e10709c840f605b8e7590008740789c183e10101c8a3', 'a:f', ('c1f803a370418300c3' + ('cc' * 14)))
+$scDebtBin = @(
+  @(0x4d2758, 'You have two years to return to positive cash.', 'You have two months to get back in the black.'),
+  @(0x4d27c4, 'You have one more year to get out of debt.', 'Just one more month to get out of debt.'))
+
+# $null when the sites are not in this program; Bad when the hook calls somewhere unexpected.
+function Find-SlowCalendar([byte[]]$bytes, $pe) {
+  $sec = $pe.Sections | Where-Object { $_.Name -eq $sectionName }
+  $secVa = if ($sec) { [int64]$pe.Base + $sec.Rva } else { -1 }
+  $r = [pscustomobject]@{ Hook = (Va-ToOff $pe ([int64]$pe.Base + $scHook)); On = $false; Mixed = $false; Bad = $false; Sites = @(); Consts = @() }
+  if ($r.Hook -lt 0) { return $null }
+  $h = [byte[]]$bytes[$r.Hook..($r.Hook + 32)]
+  $hookOn = $false
+  if (-not (Compare-Object $h $scHookVanilla -SyncWindow 0)) { }
+  elseif ($h[0] -eq 0xE8 -and $h[5] -eq 0xEB -and $h[6] -eq 0x1A) {
+    if (-not $sec -or [int64]$pe.Base + $scHook + 5 + [BitConverter]::ToInt32($h, 1) -ne $secVa + $scAt) { $r.Bad = $true; return $r }
+    $hookOn = $true
+  } else { return $null }
+  $on = 0; $off = 0
+  foreach ($s in $scSites) {
+    $b = [int]$s.EndsWith('+'); $o = Va-ToOff $pe ([int64]$pe.Base + [Convert]::ToInt64($s.TrimEnd('+'), 16))
+    if ($o -lt 0) { return $null }
+    $v = [int64][BitConverter]::ToUInt32($bytes, $o)
+    if ($v -eq 0x834170 + $b) { $off++ } elseif ($sec -and $v -eq $secVa + $scF + $b) { $on++ } else { return $null }
+    $r.Sites += ,@($o, $b)
+  }
+  foreach ($c in $scConsts) {
+    $o = Va-ToOff $pe ([int64]$pe.Base + $c[0])
+    if ($o -lt 0) { return $null }
+    $have = [byte[]]$bytes[$o..($o + $c[1].Length - 1)]
+    if (-not (Compare-Object $have $c[1] -SyncWindow 0)) { $off++ } elseif (-not (Compare-Object $have $c[2] -SyncWindow 0)) { $on++ } else { return $null }
+    $r.Consts += ,@($o, $c[1], $c[2])
+  }
+  if ($hookOn) { $on++ } else { $off++ }
+  if ($on) {
+    if (-not $sec -or $sec.RawSize -lt $scEnd) { $r.Bad = $true; return $r }
+    $f = Tpl-Read $bytes $scTpl ($sec.Raw + $scAt) $pe
+    if (-not $f -or [regex]::Matches($latin1.GetString($bytes, $sec.Raw + $scAt, $scF - $scAt), '^' + (Tpl-Rx $scTpl)).Count -ne 1 -or
+        $f['f'] -ne $secVa + $scF) { $r.Bad = $true; return $r }
+  }
+  $r.On = $off -eq 0; $r.Mixed = $on -gt 0 -and $off -gt 0
+  return $r
+}
+
+# The code for section VA $va: the bytes from +0x4000 to +0x407F (F at +0x4040 starts at 0).
+function Sc-Code([int64]$va) {
+  $b = Tpl-Build $scTpl @{ f = $va + $scF } ($va + $scAt)
+  if ($b.Length -ne $scF - $scAt) { throw "slow calendar code built to $($b.Length) bytes, expected $($scF - $scAt)" }
+  return ,[byte[]]($b + (New-Object byte[] ($scEnd - $scF)))
+}
+
+# (offset, bytes) for every site, slow ($on) or as shipped.
+function Sc-SiteBytes($sc, [bool]$on, [int64]$secVa, $pe) {
+  $c = @()
+  if ($on) { $c += ,@($sc.Hook, [byte[]](@(0xE8) + (Rel32 ([int64]$pe.Base + $scHook + 5) ($secVa + $scAt)) + @(0xEB, 0x1A) + @(0xCC) * 26)) }
+  else { $c += ,@($sc.Hook, $scHookVanilla) }
+  foreach ($s in $sc.Sites) { $c += ,@($s[0], [BitConverter]::GetBytes([uint32]$(if ($on) { $secVa + $scF + $s[1] } else { 0x834170 + $s[1] }))) }
+  foreach ($k in $sc.Consts) { $c += ,@($k[0], $(if ($on) { $k[2] } else { $k[1] })) }
+  return ,$c
+}
+
+# The difficulty cards' "Payroll  N times/month" (the program): 8x as many with -Calendar slow.
+$scPayExe = @(,@('%d times/month', '%dx8 per month'))
+
+# Strings that follow the calendar: the board's debt warnings say months when
+# its verdict comes every month (-Calendar slow with -YearEvents monthly;
+# image\golf.bin), the payroll count on the difficulty cards (the programs).
+# Label-Edits reads $labelBin / $labelExe from this scope.
+function Set-CalendarLabels([string]$what, $bin, $exe, [bool]$on, [string]$oldWord, [string]$newWord) {
+  $labelBin = $bin; $labelExe = @(, $exe)
+  $files = @()
+  if ($bin.Count) { $files += ,@((Join-Path $InstallDir 'image\golf.bin'), $true) }
+  if ($exe.Count) { $files += @($exes | ForEach-Object { ,@($_, $false) }) }
+  foreach ($f in $files) {
+    $path = $f[0]; $isBin = $f[1]; $name = Split-Path $path -Leaf
+    if (-not (Test-Path -LiteralPath $path)) { Write-Warning "$name not found; $what left alone."; continue }
+    $bytes = [IO.File]::ReadAllBytes($path)
+    $state = ''
+    $edits = Label-Edits (Label-Text $bytes $isBin) $on $isBin ([ref]$state)
+    if ($null -eq $edits) { Write-Warning "$name : $what not recognised; left alone."; continue }
+    Write-Host "$name : $what = $(if ($state -eq 'vanilla') { "$oldWord (as shipped)" } elseif ($state -eq 'renamed') { $newWord } else { $state })"
+    if ($edits.Count -eq 0) { continue }
+    if ($DryRun) { Write-Host "$name : would rewrite $($edits.Count) $what strings (dry run)."; continue }
+    foreach ($e in $edits) { [Array]::Copy($e[1], 0, $bytes, $e[0], $e[1].Length) }
+    try { [IO.File]::WriteAllBytes($path, $bytes) }
+    catch { throw "$name : could not write ($($_.Exception.Message)). Close the game and try again." }
+    $check = ''
+    $left = Label-Edits (Label-Text ([IO.File]::ReadAllBytes($path)) $isBin) $on $isBin ([ref]$check)
+    if ($null -eq $left -or $left.Count -ne 0) { throw "$name : $what check failed after writing." }
+    Write-Host "$name : $what -> $(if ($on) { $newWord } else { "$oldWord (as shipped)" })"
+  }
+}
+
 # ------------------------------------------------------------------- patcher
 function Patch-Exe([string]$path) {
   $name = Split-Path $path -Leaf
@@ -2322,10 +2598,12 @@ function Patch-Exe([string]$path) {
   $escWant = $EscapeAll -eq 'on'
   if (-not $esc) { Write-Warning "$name : Escape handler not recognised; Escape left alone." }
   else {
-    Write-Host "$name : Escape = $(if ($esc.On) { 'closes everything' } else { 'one step per press (as shipped)' })"
-    if ($esc.On -ne $escWant) {
+    $escSays = @{ vanilla = 'one step per press (as shipped)'; menu = 'closes everything and opens the Menu'; old = 'closes everything, Menu only with nothing open (earlier patch)' }
+    Write-Host "$name : Escape = $($escSays[$esc.Form])"
+    $escForm = if ($escWant) { 'menu' } else { 'vanilla' }
+    if ($esc.Form -ne $escForm) {
       $changes += ,@($esc.Offset, (Tpl-Build $(if ($escWant) { $escPatched } else { $escVanilla }) $esc.Fields $esc.Va))
-      Write-Host "$name : Escape -> $(if ($escWant) { 'closes everything' } else { 'one step per press (as shipped)' })"
+      Write-Host "$name : Escape -> $($escSays[$escForm])"
     }
   }
 
@@ -2414,6 +2692,10 @@ function Patch-Exe([string]$path) {
   $tlWant = $TourneyBuild -eq 'locked'
   $tw = Find-TourneyWages $bytes $text $pe
   $twWant = $TourneyWages -eq 'unpaid'
+  $sc = Find-SlowCalendar $bytes $pe
+  $scWant = $Calendar -eq 'slow'
+  $lv = Find-LiveScroll $bytes $pe
+  $lvWant = $LiveScroll -ne 'off'
   $snackWant = $SnackPath -eq 'free'
   $yeWant = $YearEvents -eq 'monthly'
   $greenWant = $GreenRoll -eq 'on'
@@ -2449,12 +2731,16 @@ function Patch-Exe([string]$path) {
   elseif (-not $tl.Bad) { Write-Host "$name : building during a tournament = $(if ($tl.On) { 'locked' } else { 'open (as shipped)' })" }
   if (-not $tw) { Write-Warning "$name : wage site not recognised; tournament wages left alone." }
   elseif (-not $tw.Bad) { Write-Host "$name : staff wages during a tournament = $(if ($tw.On) { 'none' } else { 'paid (as shipped)' })" }
-  if (($sec -and (-not $names -or -not $fix)) -or ($aim -and $aim.Bad) -or ($pop -and $pop.Bad) -or ($club -and $club.Bad) -or ($green -and $green.Bad) -or ($dn -and $dn.Bad) -or ($shot -and $shot.Bad) -or ($curve -and $curve.Bad) -or ($ye -and $ye.Bad) -or ($snack -and $snack.Bad) -or ($gn -and $gn.Bad) -or ($tl -and $tl.Bad) -or ($tw -and $tw.Bad)) {
+  if (-not $sc) { Write-Warning "$name : clock sites not recognised; calendar left alone." }
+  elseif (-not $sc.Bad) { Write-Host "$name : calendar = $(if ($sc.On) { 'slow (a month = 8 old months)' } elseif ($sc.Mixed) { 'half patched' } else { 'as shipped' })" }
+  if ($lvSpec -and -not $lv) { Write-Warning "$name : not the program live scrolling was built for ($($lvSpec.version)); scrolling left alone." }
+  elseif ($lv) { Write-Host "$name : scrolling = $(if ($lv.Mixed) { 'half patched' } else { Lv-Says $lv.Mode $lv.Lead })" }
+  if (($sec -and (-not $names -or -not $fix)) -or ($aim -and $aim.Bad) -or ($pop -and $pop.Bad) -or ($club -and $club.Bad) -or ($green -and $green.Bad) -or ($dn -and $dn.Bad) -or ($shot -and $shot.Bad) -or ($curve -and $curve.Bad) -or ($ye -and $ye.Bad) -or ($snack -and $snack.Bad) -or ($gn -and $gn.Bad) -or ($tl -and $tl.Bad) -or ($tw -and $tw.Bad) -or ($sc -and $sc.Bad)) {
     Write-Warning "$name : $sectionName is in use by a part not recognised; staff names, the Pixel HD fix, pro aim and news popups left alone."
-    $names = $null; $fix = $null; $aim = $null; $pop = $null; $club = $null; $green = $null; $dn = $null; $shot = $null; $curve = $null; $ye = $null; $snack = $null; $gn = $null; $tl = $null; $tw = $null
+    $names = $null; $fix = $null; $aim = $null; $pop = $null; $club = $null; $green = $null; $dn = $null; $shot = $null; $curve = $null; $ye = $null; $snack = $null; $gn = $null; $tl = $null; $tw = $null; $sc = $null; $lv = $null
   }
-  $secWant = ($names -and $namesWant) -or ($fix -and $fixWant) -or ($aim -and $aimWant) -or ($pop -and $popWant) -or ($club -and $clubWant) -or ($green -and $greenWant) -or ($dn -and $dnWant) -or ($shot -and $shotWant) -or ($curve -and $curveWant) -or ($ye -and $yeWant) -or ($snack -and $snackWant) -or ($gn -and $gnWant) -or ($tl -and $tlWant) -or ($tw -and $twWant)
-  if ($names -or $fix -or $aim -or $pop -or $club -or $green -or $dn -or $shot -or $curve -or $ye -or $snack -or $gn -or $tl -or $tw) {
+  $secWant = ($names -and $namesWant) -or ($fix -and $fixWant) -or ($aim -and $aimWant) -or ($pop -and $popWant) -or ($club -and $clubWant) -or ($green -and $greenWant) -or ($dn -and $dnWant) -or ($shot -and $shotWant) -or ($curve -and $curveWant) -or ($ye -and $yeWant) -or ($snack -and $snackWant) -or ($gn -and $gnWant) -or ($tl -and $tlWant) -or ($tw -and $twWant) -or ($sc -and $scWant) -or ($lv -and $lvWant)
+  if ($names -or $fix -or $aim -or $pop -or $club -or $green -or $dn -or $shot -or $curve -or $ye -or $snack -or $gn -or $tl -or $tw -or $sc -or $lv) {
     $secVa = 0
     if ($secWant) {
       if (-not $sec) { $addSection = $true; $secVa = [int64]$pe.Base + $pe.SizeOfImage; $secOff = $bytes.Length }
@@ -2476,6 +2762,8 @@ function Patch-Exe([string]$path) {
       if ($curve -and $curveWant) { [Array]::Copy($curveCode, 0, $blob, $curveAt, $curveCode.Length) }
       if ($tl -and $tlWant) { [Array]::Copy($tlCode, 0, $blob, $tlAt, $tlCode.Length) }
       if ($tw -and $twWant) { [Array]::Copy($twCode, 0, $blob, $twAt, $twCode.Length) }
+      if ($sc -and $scWant) { $sk = Sc-Code $secVa; [Array]::Copy($sk, 0, $blob, $scAt, $sk.Length) }
+      if ($lv -and $lvWant) { $lk = Lv-Code $secVa; [Array]::Copy($lk, 0, $blob, $lvAt, $lk.Length) }
       if ($ye -and $yeWant) { $yc = Ye-Code $secVa $ye; [Array]::Copy($yc, 0, $blob, $yeAt, $yc.Length) }
       if ($snack -and $snackWant) { $kc = Snack-Code $secVa $snack; [Array]::Copy($kc, 0, $blob, $snackAt, $kc.Length) }
       if ($gn -and $gnWant) { $nc = Gn-Code $secVa $gn; [Array]::Copy($nc, 0, $blob, $gnAt, $nc.Length) }
@@ -2589,6 +2877,25 @@ function Patch-Exe([string]$path) {
         Write-Host "$name : staff wages during a tournament -> $(if ($twWant) { 'none' } else { 'paid (as shipped)' })"
       }
     }
+    if ($sc) {
+      $cb2 = Sc-SiteBytes $sc $scWant $secVa $pe; $diff = $false
+      foreach ($c in $cb2) { if (Compare-Object $bytes[$c[0]..($c[0] + $c[1].Length - 1)] $c[1] -SyncWindow 0) { $diff = $true } }
+      if ($diff) {
+        foreach ($c in $cb2) { $changes += ,$c }
+        Write-Host "$name : calendar -> $(if ($scWant) { 'slow (a month = 8 old months)' } else { 'as shipped' })"
+      }
+    }
+    if ($lv) {
+      $diff = $false; $lb = @()
+      foreach ($e in $lv.Sites) {
+        $w = Lv-SiteBytes $e[1] $lvWant $secVa; $lb += ,@($e[0], $w)
+        if (Compare-Object $bytes[$e[0]..($e[0] + $w.Length - 1)] $w -SyncWindow 0) { $diff = $true }
+      }
+      if ($diff) { foreach ($c in $lb) { $changes += ,$c } }
+      if ($diff -or $lv.Mode -ne $LiveScroll -or ($LiveScroll -eq 'on' -and $lv.Lead -ne $ScrollLead)) {
+        Write-Host "$name : scrolling -> $(Lv-Says $LiveScroll $ScrollLead)"
+      }
+    }
   }
 
   if (-not $changes -and -not $dropSection) { Write-Host "$name : nothing to change."; return }
@@ -2598,11 +2905,12 @@ function Patch-Exe([string]$path) {
   if (-not (Test-Path -LiteralPath $backup) -and $years -and $years.Base -eq 2001 -and $land.Mode -eq 'share' -and
       $acres.State -eq 'original' -and $staff.State -eq 'ok' -and $staff.Percent -eq 100 -and
       $night -and -not $night.Moved -and (Same-Night $night.Values $nightVanilla) -and $names -and -not $names.On -and -not $names.Section -and $fix -and -not $fix.On -and
-      $news -and $news.Hold -eq 1 -and $esc -and -not $esc.On -and
+      $news -and $news.Hold -eq 1 -and $esc -and $esc.Form -eq 'vanilla' -and
       $weather -and -not $weather.Keep -and $edge -and -not $edge.On -and $lm -and $lm.Percent -eq 100 -and $dist -and $dist.Form -eq 'vanilla' -and $aim -and -not $aim.On -and
       $pop -and -not $pop.On -and $club -and -not $club.On -and $green -and -not $green.On -and $dn -and -not $dn.On -and
       $shot -and -not $shot.On -and $curve -and -not $curve.On -and $all -and -not $all.On -and -not $all.Mixed -and $ye -and -not $ye.On -and -not $ye.Mixed -and $snack -and -not $snack.On -and $gn -and -not $gn.On -and
-      $sp -and $sp.M -eq 64 -and $tl -and -not $tl.On -and $tw -and -not $tw.On) {
+      $sp -and $sp.M -eq 64 -and $tl -and -not $tl.On -and $tw -and -not $tw.On -and $sc -and -not $sc.On -and -not $sc.Mixed -and
+      (-not $lv -or (-not $lv.On -and -not $lv.Mixed))) {
     Copy-Item -LiteralPath $path -Destination $backup
     Write-Host "$name : original saved as $(Split-Path $backup -Leaf)"
   }
@@ -2636,7 +2944,7 @@ function Patch-Exe([string]$path) {
   }
   if ($esc) {
     $e2 = Find-Escape $after $afterText $pe2
-    if (-not $e2 -or $e2.On -ne $escWant) { throw "$name : Escape verification failed." }
+    if (-not $e2 -or $e2.Form -ne $(if ($escWant) { 'menu' } else { 'vanilla' })) { throw "$name : Escape verification failed." }
   }
   if ($lm) {
     $l2 = Find-Landmark $after $afterText
@@ -2696,7 +3004,7 @@ function Patch-Exe([string]$path) {
   }
   if ($ye) {
     $v2 = Find-YearEvents $after $afterText $pe2
-    if (-not $v2 -or $v2.Bad -or $v2.Mixed -or $v2.On -ne $yeWant -or $v2.Itoa -ne $ye.Itoa -or $v2.Skip -ne $ye.Skip) { throw "$name : year events verification failed." }
+    if (-not $v2 -or $v2.Bad -or $v2.Mixed -or $v2.On -ne $yeWant -or $v2.Itoa -ne $ye.Itoa -or $v2.Skip -ne $ye.Skip -or ($yeWant -and $v2.Gate -ne (Ye-Gate))) { throw "$name : year events verification failed." }
   }
   if ($snack) {
     $k2 = Find-SnackPath $after $afterText $pe2
@@ -2718,7 +3026,20 @@ function Patch-Exe([string]$path) {
     $w2 = Find-TourneyWages $after $afterText $pe2
     if (-not $w2 -or $w2.Bad -or $w2.On -ne $twWant) { throw "$name : tournament wages verification failed." }
   }
-  if ($names -or $fix -or $aim -or $pop -or $club -or $green -or $dn -or $shot -or $curve -or $ye -or $snack -or $gn -or $tl -or $tw) {
+  if ($sc) {
+    $z2 = Find-SlowCalendar $after $pe2
+    if (-not $z2 -or $z2.Bad -or $z2.Mixed -or $z2.On -ne $scWant) { throw "$name : calendar verification failed." }
+  }
+  if ($lv) {
+    $v2 = Find-LiveScroll $after $pe2
+    if (-not $v2 -or $v2.Mixed -or $v2.On -ne $lvWant) { throw "$name : live scrolling verification failed." }
+    if ($lvWant) {
+      $s2 = $pe2.Sections | Where-Object { $_.Name -eq $sectionName }
+      $want = Lv-Code ([int64]$pe2.Base + $s2.Rva)
+      if (Compare-Object ([byte[]]$after[($s2.Raw + $lvAt)..($s2.Raw + $lvAt + $want.Length - 1)]) $want -SyncWindow 0) { throw "$name : live scrolling code verification failed." }
+    }
+  }
+  if ($names -or $fix -or $aim -or $pop -or $club -or $green -or $dn -or $shot -or $curve -or $ye -or $snack -or $gn -or $tl -or $tw -or $sc -or $lv) {
     $sec2 = $pe2.Sections | Where-Object { $_.Name -eq $sectionName }
     if ([bool]$sec2 -ne [bool]$secWant) { throw "$name : $sectionName section verification failed." }
     if ($sec2 -and ($sec2.RawSize -ne $sectionSize -or $sec2.VSize -ne $sectionSize -or $pe2.SizeOfImage -ne $sec2.Rva + $sectionSize -or
@@ -2744,6 +3065,71 @@ function Set-MapScale([int]$scale) {
   if ($DryRun) { Write-Host "options.ini: would set [map] scale=$scale (dry run)."; return }
   [IO.File]::WriteAllLines($ini, $out)
   Write-Host "options.ini: [map] scale=$scale (applies to new courses after the next game start)."
+}
+
+# ------------------------------------------------------------------- rain
+# The remaster's regional weather (weather_climate.c): every weather spell
+# ([environment] weather_minutes, about 3 minutes) draws clear / cloudy /
+# rain / storm from the place's row for the season in
+# data\weather-climate.csv: whole-number weights, each at least 1, 100 in all.
+# The share of spells that are wet is (rain + storm) / 100; both are cut to
+# -Rain percent (at least 1 each, the table's floor) and clear gets the rest.
+# The rewritten file starts with a marker line, so a file without it (first
+# run, or a game update's new table) is taken as the original and kept as
+# weather-climate.csv.companion-backup.
+$rainMark = '# companion: rain and storm odds at '
+function Rain-Rows([string[]]$lines, [int]$pct) {
+  $out = New-Object System.Collections.Generic.List[string]
+  $out.Add("$rainMark$pct% of the shipped table (weather-climate.csv.companion-backup)")
+  foreach ($l in $lines) {
+    if ($l -match '^([^#,][^,]*),(\d),(\d+),(\d+),(\d+),(\d+),(.*)$') {
+      $cloud = [int]$Matches[4]; $rain = [int]$Matches[5]; $storm = [int]$Matches[6]
+      $wet = [Math]::Max(2, [int][Math]::Round(($rain + $storm) * $pct / 100.0, [MidpointRounding]::AwayFromZero))
+      $s2 = [Math]::Max(1, [int][Math]::Round($storm * $pct / 100.0, [MidpointRounding]::AwayFromZero))
+      $r2 = [Math]::Max(1, $wet - $s2)
+      $out.Add("$($Matches[1]),$($Matches[2]),$(100 - $cloud - $r2 - $s2),$cloud,$r2,$s2,$($Matches[7])")
+    } else { $out.Add($l) }
+  }
+  return ,$out.ToArray()
+}
+function Set-Rain([int]$pct) {
+  $csv = Join-Path $InstallDir 'data\weather-climate.csv'; $backup = "$csv.companion-backup"
+  if (-not (Test-Path -LiteralPath $csv)) { Write-Warning "data\weather-climate.csv not found; rain left alone."; return }
+  $text = [IO.File]::ReadAllText($csv); $nl = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+  $ours = $text.StartsWith($rainMark)
+  if ($pct -eq 100) {
+    if (-not $ours) { Write-Host "weather: rain odds as shipped."; return }
+    if (-not (Test-Path -LiteralPath $backup)) { Write-Warning "weather-climate.csv.companion-backup missing; rain left alone."; return }
+    if ($DryRun) { Write-Host "weather: would restore the shipped rain odds (dry run)."; return }
+    Copy-Item -LiteralPath $backup -Destination $csv -Force; Remove-Item -LiteralPath $backup
+    Write-Host "weather: shipped rain odds restored."; return
+  }
+  if ($ours -and -not (Test-Path -LiteralPath $backup)) { Write-Warning "weather-climate.csv.companion-backup missing; rain left alone."; return }
+  $origText = if ($ours) { [IO.File]::ReadAllText($backup) } else { $text }
+  $onl = if ($origText.Contains("`r`n")) { "`r`n" } else { "`n" }
+  $want = ((Rain-Rows ($origText -split "`r?`n") $pct) -join $onl)
+  if ($text -ceq $want) { Write-Host "weather: rain and storm odds at $pct% of shipped."; return }
+  if ($DryRun) { Write-Host "weather: would set rain and storm odds to $pct% of shipped (dry run)."; return }
+  if (-not $ours) { Copy-Item -LiteralPath $csv -Destination $backup -Force }
+  [IO.File]::WriteAllText($csv, $want, (New-Object System.Text.UTF8Encoding($false)))
+  Write-Host "weather: rain and storm odds -> $pct% of shipped (original kept as weather-climate.csv.companion-backup)."
+}
+
+# Live scrolling works through the remaster's smooth scrolling ([display]
+# smooth in options.ini, the Options page's "Smooth scrolling"): a choice of
+# off there is turned back on. Nothing is written when it is not set to 0.
+function Set-SmoothScrolling {
+  $ini = Join-Path $InstallDir 'options.ini'
+  if (-not $lvSpec -or -not (Test-Path -LiteralPath $ini)) { return }
+  $lines = [IO.File]::ReadAllLines($ini); $in = $false; $hit = $false
+  for ($i = 0; $i -lt $lines.Length; $i++) {
+    if ($lines[$i] -match '^\s*\[(.+)\]\s*$') { $in = $Matches[1] -ieq 'display' }
+    elseif ($in -and $lines[$i] -match '^\s*smooth\s*=\s*0\s*$') { $lines[$i] = 'smooth=1'; $hit = $true }
+  }
+  if (-not $hit) { return }
+  if ($DryRun) { Write-Host "options.ini: would turn Smooth scrolling on for live scrolling (dry run)."; return }
+  [IO.File]::WriteAllLines($ini, $lines)
+  Write-Host "options.ini: Smooth scrolling turned on (live scrolling works through it)."
 }
 
 # The remaster's own hiring limit, [gameplay] staff_max in mods.ini (1..100;
@@ -2792,5 +3178,9 @@ Set-WhiteFlowers $WhiteFlowers
 Set-RedFlowers $RedFlowers
 Set-Labels $Labels
 Set-YearEventLabels $YearEvents
+Set-CalendarLabels 'debt wording' $scDebtBin @() ($Calendar -eq 'slow' -and $YearEvents -eq 'monthly') 'years' 'months'
+Set-CalendarLabels 'payroll wording' @() $scPayExe ($Calendar -eq 'slow') 'N times/month' 'Nx8 per month'
 Set-StaffMax $StaffMax
+if ($LiveScroll -eq 'on') { Set-SmoothScrolling }
+Set-Rain $Rain
 

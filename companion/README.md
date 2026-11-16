@@ -16,7 +16,7 @@ new years. The script finds the 10 display sites by byte signature (8 x
 keeps the original as `<exe>.companion-backup`, and checks its own work.
 
 - Another year: `Apply-CompanionPatches.ps1 -StartYear 2031`
-- Undo everything: `Apply-CompanionPatches.ps1 -StartYear 2001 -StartLand share -StaffRadius 100 -StaffNames off -NightTint vanilla -Celebrities vanilla -ProGolfers vanilla -PixelHdFix off -NewsHold 1 -EscapeAll off -KeepWeather off -LandmarkRadius 100 -WhiteFlowers off -Distances vanilla -Labels off -ProAim off -ScrollEdge off -NewsPopup off -GreenRoll off -ShotFix off -AllShots off -YearEvents yearly -CurveFix off -ClubCache off -RedFlowers off -DesignNames off -SnackPath needed -GolferNames vanilla -StaffMax 20 -StaffSpeed 100 -TourneyBuild open -TourneyWages paid` (gives back the byte-identical program and the original data files)
+- Undo everything: `Apply-CompanionPatches.ps1 -StartYear 2001 -StartLand share -StaffRadius 100 -StaffNames off -NightTint vanilla -Celebrities vanilla -ProGolfers vanilla -PixelHdFix off -NewsHold 1 -EscapeAll off -KeepWeather off -LandmarkRadius 100 -WhiteFlowers off -Distances vanilla -Labels off -ProAim off -ScrollEdge off -NewsPopup off -GreenRoll off -ShotFix off -AllShots off -YearEvents yearly -CurveFix off -ClubCache off -RedFlowers off -DesignNames off -SnackPath needed -GolferNames vanilla -StaffMax 20 -StaffSpeed 100 -TourneyBuild open -TourneyWages paid -Calendar vanilla -LiveScroll off -Rain 100` (gives back the byte-identical program and the original data files)
 - Preview: `Apply-CompanionPatches.ps1 -DryRun`
 - Re-run after every game update, since an update replaces the program (and
   with it every fix below, the Pixel HD flicker fix included).
@@ -151,6 +151,13 @@ in the remaster's program, each in its own slot:
   "oriental house" -> "tea house" ("a traditional tea house");
 - celebrity types "fitness guru" -> "influencer", "beauty" -> "icon"; the
   investors Don Trump, L.Probst and B.Gates -> E.Muskrat, J.Bezzos and M.Zuck;
+- the visitors and investors that went by initials get names: the CEO
+  J.P.Bigdome -> Max Profit, the heiress Ivana Richman -> Goldie Banks, the
+  commissioner I.M.Picky -> Nick Picker (in golf.bin and in their golfer
+  files, `game\Themes\Standard\*.glf`, name field only; the file names
+  stay), and the investors J.W.Bigguy -> Bill Fold, J.P.Bigwig -> Rich Fields,
+  J.W.Bigshot -> Grant Money, E.F.Mutton -> Ira Roth. A save made earlier may
+  keep a visitor's old name until that visitor is loaded again;
   the fallback celebrity "Bill Clinton" -> "Bubba Klinton"; "Rocky Mtns." ->
   "Rocky Mountains"; the skill "Mental Toughness" -> "Composure";
 - remaster tooltips: "Analyze golf shot" -> "Shot preview", "Upgrade (can be
@@ -281,12 +288,13 @@ means a little less chatter. 1 restores the original. Checked in game. In a
 build from this source the same is `[ui] news_hold=3` in `data/mods.ini`
 (`hud_news_posted`, `hud_game.c`).
 
-## Escape closes everything
+## Escape opens the Menu
 
 As shipped, each Esc closed one thing: first the message, then the build bar,
 then the tray, and only then the Menu. `-EscapeAll on` (the default) makes one
-Esc close the open message or history, fold the build bar, close the open tray
-and cancel its tool. Only an Esc with nothing open opens the Menu.
+Esc close the open message or history, fold the build bar, close the open tray,
+cancel its tool and open the Menu, like a pause key in most games. The Menu
+click waits until the tray has closed.
 `-EscapeAll off` restores it. Source: `ui_hud_escape` in `ui/ui_hud.c`. Checked
 by reading back the patched code, not yet by pressing Esc in game (the test
 bridge's key events do not reach the HUD).
@@ -579,7 +587,11 @@ dates, and saves are fully compatible both ways. One exception is on purpose:
 **the board's debt verdict stays yearly**. Its warnings ("You have two years to
 return to positive cash") and its strike count (three strikes and the board
 ends your contract) still happen on March 1 only. Monthly strikes would fire
-you after three months in debt.
+you after three months in debt. With the slow calendar (next section, on by
+default) a month lasts as long as a whole old year, so the verdict comes on
+every 1st instead, and its warnings read "You have two months to get back in
+the black." and "Just one more month to get out of debt." Three strikes still
+take three old years of play.
 
 The code is 128 bytes in the `.cmpn` section (+0x1380: the review title and the
 March-only debt gate), plus seven byte edits in the main loop and the review,
@@ -588,6 +600,40 @@ three strings in `image\golf.bin` and one in the program. Details in
 in April and May, the invitation in May, the debt verdict on March 1 only;
 `yearly` restores the byte-identical files). `-YearEvents yearly` restores the
 shipped schedule. Patcher only.
+
+## Slow calendar: a month lasts a whole old year
+
+With `-Calendar slow` (the default) the calendar runs 8x slower: one month
+takes as long to play as the original game's whole operating year (March to
+October). Everything that ran on play time keeps its real-time pace:
+
+- **Wages** are paid exactly as often in real time as before (every
+  `1024 / (difficulty + 2)` old ticks), so a calendar month now holds 8x the
+  paydays. The difficulty screen says so: "2x8 per month" ... "5x8 per month".
+- Golfers, staff, weeds, animations, timed events, history samples and the
+  mid-month autosave keep their real-time cadence.
+- What belongs to the calendar follows the calendar: the date, seasons and
+  weather, the 1st-of-month events (the monthly autosave, 2 % interest on debt,
+  stat fading, path warnings) and the yearly events. So interest and the 1st's
+  events come 8x less often in play time. With `-YearEvents monthly` the board's
+  review comes on every 1st, which is once per old year of play.
+- Tournaments run on play time, so the calendar barely moves during one, and
+  its wages are the same real-time wages as before. `-TourneyWages unpaid`
+  (above) stops them while a tournament is on.
+
+Saves keep their date and load in either mode. Switching a running career
+from slow back to vanilla works, but timers that were set in slow mode (for
+example a golfer's next decision) can wait longer than usual once.
+
+The saved clock is still the calendar. A fast counter in the `.cmpn` section
+(+0x4040), kept as `clock x 8 + sub-step`, drives the 129 play-time reads; a
+hook in the main loop advances it and derives the clock. Four constants are
+scaled (the 1st-of-month gate, the tutorial's dates), plus two debt strings
+in `image\golf.bin` and the payroll label in the program. The section grows to
+20 KB (+0x4000 to +0x407F). Details in `notes\slow-calendar.md`. Tested on a
+scratch copy of the game (wage timing, the 1st of the month, autosaves, a new
+career, a save loaded in both modes). `-Calendar vanilla` restores the
+shipped clock. Patcher only.
 
 ## Golfer names: real names
 
@@ -642,6 +688,68 @@ offer to the results):
 
 Both are small hooks in the `.cmpn` section (+0x12A0, +0x12E0). How
 tournaments and the SGA's standards work: `notes/tournaments.md`.
+
+## Live scrolling, and the ground kept in step
+
+`-LiveScroll on|sync|off` (default `on`) and `-ScrollLead 12`. Research,
+measurements and what is left: `notes/scrolling.md`.
+
+**The ground in step (an upstream flicker; `sync` is this alone).** The hi-res
+ground is handed to the renderer separately from the course picture, one
+scene at a time. The game makes the next frame's ground a few milliseconds
+before it publishes that frame; a renderer that picked up the current picture
+in that gap found the next ground already waiting, could not use it, and kept
+the older one. Result, while the camera moves: one picture with the ground a
+camera step away from the trees and buildings standing on it. Now no picture
+is taken in that gap, and the ground is taken first, then the picture.
+Recorded on a copy (every presented frame, pans in both directions, 158 x 158
+map):
+
+| | pictures | ground out of step |
+|---|---|---|
+| as shipped | 139 | 12 |
+| ground in step | 131 | 0 |
+
+**Live scrolling (`on`).** As shipped, each new course picture eased into
+place over one game frame, so the view ran 120-240 ms behind the keys or the
+mouse and kept moving after the input stopped. Now the render thread works
+out the camera itself on every presented frame (pan keys: the last key tick
+plus speed x time; drag: the cursor's position right now, through the game's
+own mapping) and places golf's last picture there. On a key or button release
+the game takes over the camera that was on screen, so nothing snaps back.
+The patcher turns "Smooth scrolling" back on in `options.ini` if it was off.
+
+It can only go so far ahead of the picture: past the picture's edge the
+renderer knows the bare ground and nothing else (trees, buildings and golfers
+are only recorded where they touch the canvas). So the slide uncovers at most
+`-ScrollLead` percent of the view (12 by default); beyond that the view waits
+at that edge for the next picture. A first version let it slide most of a
+screen to keep the frame rate up, and showed bare ground there until the next
+picture: wrong, withdrawn.
+
+What that means in play: slow pans and drags are smooth and exact. At full
+key speed the view is direct (0-60 ms behind instead of 120-240) but moves in
+steps of one picture, about 10 a second on a big course, as it did before:
+a new course picture costs the render thread 100-150 ms there, and that is
+renderer work in the source, not a patch (see the notes).
+
+Tested on a copy: the real cursor's mapping matched the game's own at 5 of 5
+points; a drag with the cursor ahead of the mouse events never stepped
+backwards and its release kept the camera on screen; `on`, `sync` and `off`
+each read back as set. The code is C (`src/live_scroll.c`, built by
+`src/build_live.py` with the MSVC x86 compiler into `live_scroll.json`); the
+patcher needs only the json. `-LiveScroll off` restores the four call sites.
+
+## Less rain
+
+`-Rain 25` (the default; percent of the shipped odds, `-Rain 100` restores).
+The remaster's regional weather draws each weather spell (about 3 minutes)
+from `data\weather-climate.csv`: clear, cloudy, rain and storm odds per place
+and season. Rain and storm odds are cut to a quarter and clear skies get the
+difference (Carolina in summer: 24 + 10 of 100 -> 6 + 3; San Diego in summer,
+4 + 1, is already at the table's floor of 1 + 1). The original table is kept
+as `weather-climate.csv.companion-backup`. A game update that replaces the
+table is picked up on the next run.
 
 ## Map size
 

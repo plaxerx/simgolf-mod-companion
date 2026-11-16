@@ -325,9 +325,10 @@ static void dock_act(UiHud *hud, const HudSnap *s, Acts *a, int i, int on) {
 }
 
 // What Esc does on the course (task-112). Companion: one press closes everything that is open (the message
-// or the history, the jwe build bar, the open tray, whose tool is cancelled too); only a press with nothing
-// open opens the Menu. As shipped it did one of those steps per press. Returns the number of actions
-// written; *what names the last step for the log.
+// or the history, the jwe build bar, the open tray, whose tool is cancelled too) and opens the Menu, like a
+// pause key; the Menu click runs after the tray's close goal. As shipped it did one of those steps per
+// press and opened the Menu only with nothing open. Returns the number of actions written; *what names the
+// last close step ("menu" if nothing was open) for the log and the double-close guard.
 int ui_hud_escape(UiHud *h, const HudSnap *s, HudAction *out, int max_out, const char **what) {
   Acts a = {out, 0, max_out};
   const char *w = NULL;
@@ -347,10 +348,8 @@ int ui_hud_escape(UiHud *h, const HudSnap *s, HudAction *out, int max_out, const
     goal(&a, HUD_GOAL_CLOSE, -1, -1);
     w = "close";
   }
-  if (!w) {
-    wheel(&a, W_OPTIONS);
-    w = "menu";
-  }
+  wheel(&a, W_OPTIONS);
+  if (!w) w = "menu";
   if (what) *what = w;
   return a.n;
 }
