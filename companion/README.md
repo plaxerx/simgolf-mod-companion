@@ -689,48 +689,56 @@ offer to the results):
 Both are small hooks in the `.cmpn` section (+0x12A0, +0x12E0). How
 tournaments and the SGA's standards work: `notes/tournaments.md`.
 
-## Live scrolling: the view follows the input, at full frame rate
+## Live scrolling, and the ground kept in step
 
-`-LiveScroll on` (the default), with the remaster's smooth scrolling (the
-patcher turns "Smooth scrolling" back on in `options.ini` if it was off).
-Research and measurements: `notes/scrolling.md`.
+`-LiveScroll on|sync|off` (default `on`) and `-ScrollLead 12`. Research,
+measurements and what is left: `notes/scrolling.md`.
 
-As shipped, smooth scrolling had two problems:
+**The ground in step (an upstream flicker; `sync` is this alone).** The hi-res
+ground is handed to the renderer separately from the course picture, one
+scene at a time. The game makes the next frame's ground a few milliseconds
+before it publishes that frame; a renderer that picked up the current picture
+in that gap found the next ground already waiting, could not use it, and kept
+the older one. Result, while the camera moves: one picture with the ground a
+camera step away from the trees and buildings standing on it. Now no picture
+is taken in that gap, and the ground is taken first, then the picture.
+Recorded on a copy (every presented frame, pans in both directions, 158 x 158
+map):
 
-- **Lag.** golf draws the course about 10 times a second. The presenter eased
-  each new picture into place over one game frame, so the view ran 140-190 ms
-  behind the keys or the mouse and kept moving after the input stopped.
-- **Frame rate.** A new course picture costs the render thread 100-150 ms on a
-  big course (terrain, relief shadows, reflections, the guard band), more than
-  golf's frame period. With a moving camera every presented frame was a new
-  picture, so the view ran at about 10 frames a second however fast the PC.
-
-Now the render thread works out the camera itself on every presented frame
-(pan keys: the last key tick plus speed x time; drag: the cursor's position
-right now, through the game's own mapping) and places golf's last picture
-there. While the view moves it keeps that picture and slides it (the guard
-band and the overscanned sprites cover a screen in every direction); it takes
-a new picture when the view stops, when the slide has used most of the guard
-band, after 0.8 s, or while the left mouse button is down. On a key or button
-release the game takes over the camera that was on screen, so nothing snaps
-back. Camera moves golf makes itself (shot follow, jumps) are as before.
-
-Measured on a copy (158 x 158 map, 1600 x 900 window, a 2 s key pan):
-
-| | as shipped | live |
+| | pictures | ground out of step |
 |---|---|---|
-| presented frames while moving | 9-16 a second | 100-140 a second |
-| view behind the input | 120-240 ms | 0-40 ms |
-| frames over 50 ms in the pan | all of them | about 3 (when a new picture is taken) |
+| as shipped | 139 | 12 |
+| ground in step | 131 | 0 |
 
-What is left: about every 0.7 s of a long pan one frame takes 100-150 ms (the
-new picture), a short skip; golfers stand still between pictures while the
-view moves. A drag was tested with the cursor running ahead of the mouse
-events (310 frames, none backwards, the release kept the camera on screen),
-and the real cursor's mapping matched the game's own at 5 of 5 points. The
-code is C (`src/live_scroll.c`, built by `src/build_live.py` with the MSVC
-x86 compiler into `live_scroll.json`); the patcher needs only the json.
-`-LiveScroll off` restores the four call sites.
+**Live scrolling (`on`).** As shipped, each new course picture eased into
+place over one game frame, so the view ran 120-240 ms behind the keys or the
+mouse and kept moving after the input stopped. Now the render thread works
+out the camera itself on every presented frame (pan keys: the last key tick
+plus speed x time; drag: the cursor's position right now, through the game's
+own mapping) and places golf's last picture there. On a key or button release
+the game takes over the camera that was on screen, so nothing snaps back.
+The patcher turns "Smooth scrolling" back on in `options.ini` if it was off.
+
+It can only go so far ahead of the picture: past the picture's edge the
+renderer knows the bare ground and nothing else (trees, buildings and golfers
+are only recorded where they touch the canvas). So the slide uncovers at most
+`-ScrollLead` percent of the view (12 by default); beyond that the view waits
+at that edge for the next picture. A first version let it slide most of a
+screen to keep the frame rate up, and showed bare ground there until the next
+picture: wrong, withdrawn.
+
+What that means in play: slow pans and drags are smooth and exact. At full
+key speed the view is direct (0-60 ms behind instead of 120-240) but moves in
+steps of one picture, about 10 a second on a big course, as it did before:
+a new course picture costs the render thread 100-150 ms there, and that is
+renderer work in the source, not a patch (see the notes).
+
+Tested on a copy: the real cursor's mapping matched the game's own at 5 of 5
+points; a drag with the cursor ahead of the mouse events never stepped
+backwards and its release kept the camera on screen; `on`, `sync` and `off`
+each read back as set. The code is C (`src/live_scroll.c`, built by
+`src/build_live.py` with the MSVC x86 compiler into `live_scroll.json`); the
+patcher needs only the json. `-LiveScroll off` restores the four call sites.
 
 ## Less rain
 

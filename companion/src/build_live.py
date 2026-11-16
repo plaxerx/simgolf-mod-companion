@@ -34,6 +34,8 @@ SIGNATURE = {
     0x601e24d0: None, 0x601e2bdc: None, 0x601e2afb: None, 0x601e29f2: None,     # filled from the program by --sign
     0x601de978: None, 0x60001cc0: 'e91b510100', 0x601df828: None,
     0x601ea2da: '83bef83a040000',                                               # render_main: t->zon
+    0x601f6150: 'a1d466e2603b058467e2600f84',                                   # take(): g_pending.serial against R.serial
+    0x601f6177: '393dd866e260',                                                 # take(): g_pending.frame against shown
 }
 
 
@@ -130,6 +132,9 @@ def link(o):
     for loc, name in pending:
         struct.pack_into('<i', blob, loc, sym_off(by_name[name]) - (loc + 4))
     entries['state'] = sym_off(by_name['_ls_state'])
+    st = entries['state']   # the fields the patcher and the tests address by offset
+    assert struct.unpack_from('<I', blob, st)[0] == 0x3143534c and struct.unpack_from('<i', blob, st + 0x58)[0] == 800 \
+        and struct.unpack_from('<i', blob, st + 0x74)[0] == 12, 'ls_state layout changed'
     while len(blob) % 16: blob.append(0)
     return blob, sorted(relocs), calls, entries
 
@@ -146,7 +151,7 @@ def main():
         for va, v in sig.items():
             if v is None: sig[va] = pe.get_data(va - pe.OPTIONAL_HEADER.ImageBase, 12).hex()
     out = dict(version='0.1.37', size=len(blob), sha1=hashlib.sha1(bytes(blob)).hexdigest(), hex=bytes(blob).hex(), relocs=relocs, calls=calls,
-               entries=entries, sites=[dict(va=va, original=orig, stub=stub, pad=pad) for va, orig, stub, pad in SITES],
+               entries=entries, fields=dict(enabled=4, hold_ms=0x58, lead_pct=0x74, sync_on=0x7c), sites=[dict(va=va, original=orig, stub=stub, pad=pad) for va, orig, stub, pad in SITES],
                signature=[dict(va=va, hex=h) for va, h in sorted(sig.items())])
     with open(OUT, 'w', newline='\n') as f: json.dump(out, f, indent=1); f.write('\n')
     print('live_scroll.json: %d bytes, %d relocs, %d calls, entries %s' % (len(blob), len(relocs), len(calls), {k: hex(v) for k, v in entries.items()}))

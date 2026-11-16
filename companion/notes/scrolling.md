@@ -62,12 +62,14 @@ off as well (whole-tile jumps at 10 a second).
   physically up the last position is kept.
 - **Placing the picture.** offset = (camera now - camera of the picture) in
   canvas px, written to `Rt.off_x/off_y` with `off_dur = 1e12`, so
-  `slide_offset()` returns it as is. Below half a pixel it is 0.
-- **Holding the picture.** While the camera moves, `upload()` is skipped (the
-  guard band and the overscanned sprite lists of `fixes.drag_scroll` cover a
-  screen each way). A new picture is taken when the camera has been still for
-  60 ms, the offset passes 70% of the canvas width or 60% of its height, the
-  picture is 0.8 s old (`hold_ms`), or the left mouse button is down.
+  `slide_offset()` returns it as is. Below half a pixel it is 0. It is capped
+  at `lead_pct` percent of the canvas width and height (the patcher's
+  `-ScrollLead`, 12): the view then waits at that edge.
+- **Holding the picture.** While the camera moves and the offset is inside the
+  cap, `upload()` is skipped and the picture slides at the full frame rate. A
+  new picture is taken when the camera has been still for 60 ms, the offset
+  reaches the cap, the picture is 0.8 s old (`hold_ms`), or the left mouse
+  button is down.
 - **Release.** `ls_adopt()` runs on the game thread before a pan key's or the
   drag button's release is stored (three sites): the camera becomes the one
   on screen and the key clock restarts.
@@ -76,45 +78,69 @@ off as well (whole-tile jumps at 10 a second).
   slide runs as before.
 
 State for tests at the blob's `ls_state` (magic `LSC1`): counters, the
-displayed camera, a debug cursor, `why` (the reason a frame was not ours).
+displayed camera, a debug cursor, `why` (the reason a frame was not ours),
+`enabled`, `lead_pct`, `sync_on`.
 
-### Measured (a copy, 158 x 158 map, 1600 x 900 window, 2 s key pans)
+### Why the lead is small (a mistake, 2026-11-15 to 16)
 
-| | as shipped | live |
-|---|---|---|
-| presented frames while moving | 9-16 /s | 100-140 /s |
-| behind the input | 120-240 ms | 0-40 ms |
-| frames over 50 ms per pan | all | 3 |
-| start after key down | 40-135 ms | 4-19 ms |
+The first version held the picture until the slide had used 70% of the canvas
+width (60% of the height), on the belief that `fixes.drag_scroll`'s guard
+band and overscan cover a screen in every direction. Timing looked excellent
+(100-140 presented frames a second while moving). It was only measured, not
+looked at. Frame recordings the next day showed the uncovered part as bare
+ground with thin black seams, no trees, buildings or golfers, until the next
+picture popped them in: golf's tests are widened by a screen, but `hooked()`
+in hd_art.c follows a sprite only when `snap_begin` finds it on the canvas, so
+nothing beyond the picture is ever recorded, and the guard band is replayed
+ground strips, not a fresh render. With the cap at 12% the uncovered strip is
+small and short-lived, and full-speed key pans are back to one picture per
+presented frame.
 
-Drag: cursor mapping equal to the game's at 5 of 5 points; a drag with the
-cursor ahead of the events: 316 predicted frames, no step backwards, the
-release adopted the camera on screen.
+## Ground and picture in step (the flicker fix)
+
+Found with the frame recorder (below). `hdt_capture()` (game thread, in
+`hd_present`) writes the one pending scene `g_pending` with `frame` = the
+serial the frame will get, a few ms before `g_frame_serial` is raised.
+`take()` (render thread, from `hdt_render`) takes the pending scene only if
+`g_pending.frame <= shown`. So a render thread that uploads frame S after the
+game thread has captured the scene for S+1 (in that gap, or because it was
+busy when S came out) finds only scene S+1, cannot take it, and draws picture
+S on the ground of an older camera. With the camera at rest nothing shows;
+while it moves the ground is a camera step off for that picture.
+
+`take_picture()` in live_scroll.c, used in every mode: when the newest frame
+is not the one on screen, (1) if `g_pending.frame > g_frame_serial` put the
+picture off to the next presented frame (at most 50 ms), else (2) call
+`take(renderer, g_frame_serial)` and then `upload()`. A picture published in
+between is at least as new as the ground, and `compose()`'s own `take()` then
+brings the ground level.
+
+Recorded (bridge `hddump`: the course part of every presented frame, 640 px
+wide; frames compared after shifting by the known camera motion; two pans
+each way at key speed):
+
+| | pictures | A-B-A frames | large pops | largest change |
+|---|---|---|---|---|
+| as shipped | 139 | 4 | 8 | 37% of the picture |
+| as shipped + in step | 131 | 0 | 0 | 4% |
+| live, not in step | 136 | 15 | 25 | 55% |
+| live + in step | 103 | 1 (2%) | 3 (7%) | 7% |
+
+At rest and through zoom steps the recorder found nothing in any mode.
 
 ## What is left
 
-- **The skip when a picture is taken while moving** (about every 0.7 s of a
-  long pan, 100-150 ms). To remove it the new picture's work has to leave the
-  render thread or get cheaper: the terrain re-rendered from scratch for every
-  camera (9,000+ batches zoomed out), the relief map and the reflections
-  rebuilt per picture. That is renderer work in the source (hd_terrain_native,
-  course_relief, hd_art), not a patch.
-- **Golfers stand still** for up to 0.8 s at a time while the view moves.
+- **Full-speed pans are one picture per presented frame**, 100-150 ms each on
+  a big course (more on a busy PC), as shipped. To change that the new
+  picture's work has to get cheaper or leave the render thread (the ground
+  re-rendered from scratch for every camera, the relief map and reflections
+  rebuilt per picture), or sprites have to be recorded beyond the canvas so
+  the picture can be held longer. Both are renderer work in the source
+  (hd_terrain_native, course_relief, hd_art), not a patch.
 - **Start of a key pan** waits for the game thread to see the key (up to one
   golf frame). The render thread could read the keyboard itself, but pan keys
   can be rebound (keymap.c).
 - golf's own camera moves (shot follow) still slide at 10 pictures a second.
-
-## Flicker: what the same data says
-
-Not yet chased (needs the user's description of what flickers and when), but
-the candidates from this work:
-
-- A picture taken mid-move replaces terrain, relief shadows and reflections
-  in one frame after a long frame: a visible pop if anything in them depends
-  on the camera (the relief map does).
-- Unlayered frames: golf's modal loops and some redraws publish a frame with
-  no course layer (`g_snap_fresh` 0); the presenter then cuts to a single
-  picture and back, dropping the slide and the kept picture.
-- The art pack loads textures on first sight (`hd_art_prepare`), so sprites
-  entering the view can appear a frame or two late in their original pixels.
+- Not looked at yet: flicker that is not about scrolling (the user has not
+  said which they see), unlayered frames from golf's modal loops, textures
+  loading on first sight.

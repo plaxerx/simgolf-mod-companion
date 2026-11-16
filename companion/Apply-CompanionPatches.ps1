@@ -205,15 +205,20 @@
 #    once a month, i.e. as often in play time as before. Saves keep their date.
 #    Code in the .cmpn section. See notes\slow-calendar.md.
 #
-# 34. Live scrolling (-LiveScroll on|off, default on): with the remaster's
-#    smooth scrolling, the view follows the pan keys and the drag on every
-#    presented frame, with no trail, and keeps its frame rate while it moves.
-#    As shipped each new course picture eased into place over a game frame
-#    (the view ran 140-190 ms behind the hand), and with a moving camera every
-#    presented frame was a new picture (about 10 a second on a big course).
-#    Code built from src\live_scroll.c (live_scroll.json, next to this script)
-#    in the .cmpn section; turns "Smooth scrolling" on in options.ini if it was
-#    off. See notes\scrolling.md.
+# 34. Live scrolling (-LiveScroll on|sync|off, default on) and the ground kept
+#    in step. Two things, in one piece of code (src\live_scroll.c, built into
+#    live_scroll.json next to this script, placed in the .cmpn section):
+#    - an upstream flicker: while the camera moves, about one new course
+#      picture in ten was shown with the ground of the picture before it, a
+#      camera step away from the trees and buildings standing on it. Ground
+#      and picture are now taken together ("sync" is this alone).
+#    - "on": with the remaster's smooth scrolling the view follows the pan
+#      keys and the drag on every presented frame instead of easing in 120-240
+#      ms behind them. It slides the picture on screen no further than
+#      -ScrollLead percent of the view (default 12, 0 to 70) past its edge,
+#      because only bare ground is known there. "on" turns "Smooth scrolling"
+#      on in options.ini if it was off.
+#    See notes\scrolling.md.
 #
 # 35. Less rain (-Rain 25, percent of the shipped odds, 1 to 100; 100 = as
 #    shipped): the remaster's regional weather picks each weather spell from
@@ -264,7 +269,8 @@ param(
   [ValidateSet('locked', 'open')][string]$TourneyBuild = 'locked',
   [ValidateSet('unpaid', 'paid')][string]$TourneyWages = 'unpaid',
   [ValidateSet('slow', 'vanilla')][string]$Calendar = 'slow',
-  [ValidateSet('on', 'off')][string]$LiveScroll = 'on',
+  [ValidateSet('on', 'sync', 'off')][string]$LiveScroll = 'on',
+  [ValidateRange(0, 70)][int]$ScrollLead = 12,
   [ValidateRange(1, 100)][int]$Rain = 25,
   [switch]$DryRun,
   [switch]$Force
@@ -2333,6 +2339,10 @@ function Lv-SiteBytes($site, [bool]$on, [int64]$secVa) {
 }
 
 # $null: not this program version (or a site holds something else). On: every site calls into the section.
+  # the settings: fields of ls_state
+  $st = [int]$lvSpec.entries.state
+  [Array]::Copy([BitConverter]::GetBytes([int]$(if ($LiveScroll -eq 'on') { 1 } else { 0 })), 0, $b, $st + [int]$lvSpec.fields.enabled, 4)
+  [Array]::Copy([BitConverter]::GetBytes([int]$ScrollLead), 0, $b, $st + [int]$lvSpec.fields.lead_pct, 4)
 function Find-LiveScroll([byte[]]$bytes, $pe) {
   if (-not $lvSpec) { return $null }
   foreach ($g in $lvSpec.signature) {
@@ -2355,7 +2365,21 @@ function Find-LiveScroll([byte[]]$bytes, $pe) {
     }
     $sites += ,@($o, $st)
   }
-  return [pscustomobject]@{ Sites = $sites; On = ($on -eq $sites.Count); Mixed = ($on -gt 0 -and $on -lt $sites.Count) }
+  $r = [pscustomobject]@{ Sites = $sites; On = ($on -eq $sites.Count); Mixed = ($on -gt 0 -and $on -lt $sites.Count); Mode = 'off'; Lead = -1 }
+  if ($r.On) {   # which of the two: the settings in the section (this build's layout; an older build reads as live)
+    $r.Mode = 'on'
+    $so = $sec.Raw + $lvAt + [int]$lvSpec.entries.state
+    if ($so + 0x80 -le $bytes.Length -and [BitConverter]::ToUInt32($bytes, $so) -eq 0x3143534c) {
+      if ([BitConverter]::ToInt32($bytes, $so + [int]$lvSpec.fields.enabled) -eq 0) { $r.Mode = 'sync' }
+      $r.Lead = [BitConverter]::ToInt32($bytes, $so + [int]$lvSpec.fields.lead_pct)
+    }
+  }
+  return $r
+}
+function Lv-Says([string]$mode, [int]$lead) {
+  if ($mode -eq 'on') { return "live (follows the input$(if ($lead -ge 0) { ", uncovers up to $lead%" })), ground in step" }
+  if ($mode -eq 'sync') { return 'as shipped, ground in step' }
+  return 'as shipped'
 }
 
 # ----------------------------------------------------------- slow calendar
@@ -2671,7 +2695,7 @@ function Patch-Exe([string]$path) {
   $sc = Find-SlowCalendar $bytes $pe
   $scWant = $Calendar -eq 'slow'
   $lv = Find-LiveScroll $bytes $pe
-  $lvWant = $LiveScroll -eq 'on'
+  $lvWant = $LiveScroll -ne 'off'
   $snackWant = $SnackPath -eq 'free'
   $yeWant = $YearEvents -eq 'monthly'
   $greenWant = $GreenRoll -eq 'on'
@@ -2710,7 +2734,7 @@ function Patch-Exe([string]$path) {
   if (-not $sc) { Write-Warning "$name : clock sites not recognised; calendar left alone." }
   elseif (-not $sc.Bad) { Write-Host "$name : calendar = $(if ($sc.On) { 'slow (a month = 8 old months)' } elseif ($sc.Mixed) { 'half patched' } else { 'as shipped' })" }
   if ($lvSpec -and -not $lv) { Write-Warning "$name : not the program live scrolling was built for ($($lvSpec.version)); scrolling left alone." }
-  elseif ($lv) { Write-Host "$name : scrolling = $(if ($lv.On) { 'live (follows the input every frame)' } elseif ($lv.Mixed) { 'half patched' } else { 'slides behind (as shipped)' })" }
+  elseif ($lv) { Write-Host "$name : scrolling = $(if ($lv.Mixed) { 'half patched' } else { Lv-Says $lv.Mode $lv.Lead })" }
   if (($sec -and (-not $names -or -not $fix)) -or ($aim -and $aim.Bad) -or ($pop -and $pop.Bad) -or ($club -and $club.Bad) -or ($green -and $green.Bad) -or ($dn -and $dn.Bad) -or ($shot -and $shot.Bad) -or ($curve -and $curve.Bad) -or ($ye -and $ye.Bad) -or ($snack -and $snack.Bad) -or ($gn -and $gn.Bad) -or ($tl -and $tl.Bad) -or ($tw -and $tw.Bad) -or ($sc -and $sc.Bad)) {
     Write-Warning "$name : $sectionName is in use by a part not recognised; staff names, the Pixel HD fix, pro aim and news popups left alone."
     $names = $null; $fix = $null; $aim = $null; $pop = $null; $club = $null; $green = $null; $dn = $null; $shot = $null; $curve = $null; $ye = $null; $snack = $null; $gn = $null; $tl = $null; $tw = $null; $sc = $null; $lv = $null
@@ -2867,9 +2891,9 @@ function Patch-Exe([string]$path) {
         $w = Lv-SiteBytes $e[1] $lvWant $secVa; $lb += ,@($e[0], $w)
         if (Compare-Object $bytes[$e[0]..($e[0] + $w.Length - 1)] $w -SyncWindow 0) { $diff = $true }
       }
-      if ($diff) {
-        foreach ($c in $lb) { $changes += ,$c }
-        Write-Host "$name : scrolling -> $(if ($lvWant) { 'live (follows the input every frame)' } else { 'slides behind (as shipped)' })"
+      if ($diff) { foreach ($c in $lb) { $changes += ,$c } }
+      if ($diff -or $lv.Mode -ne $LiveScroll -or ($LiveScroll -eq 'on' -and $lv.Lead -ne $ScrollLead)) {
+        Write-Host "$name : scrolling -> $(Lv-Says $LiveScroll $ScrollLead)"
       }
     }
   }

@@ -25,16 +25,29 @@
 // Holding the picture. A new course picture costs the render thread 100-150 ms
 // (terrain, relief, reflections, the guard band: measured on a 158x158 map),
 // more than golf's frame period, so with a moving camera every presented frame
-// was a new picture and the view ran at about 10 frames a second. The slide
-// needs no new picture: the guard band and the overscanned sprite lists cover a
-// screen in every direction. So while the view moves, upload() is skipped and
-// the picture on screen slides at the full frame rate; a new one is taken when
-// the view stops, when the slide has used most of the guard band, after hold_ms
-// (the golfers stand still that long while the view moves), or while the left
-// mouse button is down (a tool at work shows at once).
+// was a new picture and the view ran at about 10 frames a second. While the
+// view moves, upload() is skipped and the picture on screen slides at the full
+// frame rate, but only a little way: past the picture's edge there is the
+// guard band's ground and nothing else (golf's sprites are only recorded where
+// they touch the canvas), so the slide may uncover at most lead_pct percent of
+// the view. Up to there the view is where the camera is; beyond, it waits at
+// that edge for the next picture. A new picture is also taken when the view
+// stops, after hold_ms, and while the left mouse button is down (a tool at
+// work shows at once).
 //
 // Only while the camera is the player's (the sub-tile camera owns it). Camera
 // moves golf makes itself (shot follow, jumps) keep the remaster's slide.
+//
+// Ground and course in step (an upstream flicker, in every mode). The hi-res
+// ground is a separate hand-over: hdt_capture() leaves one pending scene
+// stamped with the frame it belongs to, and the renderer takes it when that
+// frame is on screen (take() in hd_terrain_native.c). The game thread captures
+// the scene for frame S+1 a few ms before it publishes frame S+1. A render
+// thread that took picture S in that gap, or just before it, found the pending
+// scene already S+1 and kept the older ground: one picture with the ground a
+// camera step away from everything standing on it. take_picture() closes the
+// gap: no picture is taken while a scene newer than the published frame is
+// pending, and the scene is taken first, then the picture.
 
 typedef unsigned int u32;
 typedef unsigned char u8;
@@ -57,6 +70,10 @@ typedef unsigned char u8;
 #define RT_ZON 0x43af8
 // hd_native.c
 #define FN_UPLOAD 0x601ee680   // upload(t, now): ecx, xmm0
+#define FRAME_SERIAL 0x60ddf8c4   // g_frame_serial: the newest published frame
+// hd_terrain_native.c
+#define FN_HDT_TAKE 0x601f6150    // take(renderer, shown): ecx, edx
+#define HDT_PENDING_FRAME 0x60e266d8   // g_pending.frame
 #define CFG_SMOOTH 0x603933a4
 #define CFG_DRAG_FIX 0x603933c4   // fixes.drag_scroll: the guard band is drawn
 #define FRAME_W 0x60393230
@@ -105,6 +122,7 @@ typedef unsigned char u8;
 #define course_active(now) (((int (__vectorcall *)(double))FN_COURSE_ACTIVE)(now))
 #define port_now() (((double (__cdecl *)(void))FN_PORT_NOW)())
 #define upload(t, now) (((void (__vectorcall *)(char *, double))FN_UPLOAD)((t), (now)))
+#define hdt_take(r, shown) (((void (__fastcall *)(void *, long))FN_HDT_TAKE)((r), (shown)))
 
 typedef struct { long x, y; } Pt;
 typedef void *(__stdcall *GetModuleHandleA_t)(const char *);
@@ -132,6 +150,11 @@ struct LsState {
   volatile int probe_ok, probe_x, probe_y;   // +0x64 dbg_cursor 2: the real cursor in frame px, as the next mouse event would say
   volatile int why;            // +0x70 why the last frame was not ours: 0 it was, 1 off, 2 smooth scrolling off, 3 not layered,
                                //       4 not the course, 5 zoom glide, 6 the camera is golf's, 7 zoom, 8 rotation, 9 a jump
+  volatile int lead_pct;       // +0x74 how much of the view the slide may uncover, percent of its width and height (the patcher's -ScrollLead)
+  volatile u32 capped;         // +0x78 presented frames where the view waited at that edge
+  volatile int sync_on;        // +0x7c 1 = ground and course taken in step (0: as shipped, for A/B)
+  volatile u32 sync_waits;     // +0x80 pictures put off a frame because the next ground was already pending
+  double sync_since;           // when the wait began (never longer than 50 ms)
   double digest_t, move_t;     // when the picture on screen was taken; when the view last moved
   double last_tx, last_ty;
   u32 drag_seen;               // the drag serial last seen
@@ -144,7 +167,7 @@ struct LsState {
   short (__stdcall *GetAsyncKeyState)(int);
   u32 (__stdcall *GetCurrentThreadId)(void);
 };
-struct LsState ls_state = {0x3143534c, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 800};
+struct LsState ls_state = {.magic = 0x3143534c, .enabled = 1, .hold_ms = 800, .lead_pct = 12, .sync_on = 1};
 
 static double dabs(double v) { return v < 0 ? -v : v; }
 
@@ -290,6 +313,23 @@ static void offset_for(char *t, double tx, double ty, double *ox, double *oy) {
   *oy = fx * F64(t + RT_CAM + 0x18) + fy * F64(t + RT_CAM + 0x28) - I32(t + RT_CAM + 0x38);
 }
 
+// Takes golf's newest picture with its ground. Returns 1 when the picture on screen changed.
+static int take_picture(struct LsState *s, char *t, double now) {
+  int shown = I32(t + RT_SHOWN), newest = I32(FRAME_SERIAL);
+  if (s->sync_on && newest != shown) {
+    if (I32(HDT_PENDING_FRAME) > newest) {   // the game thread is between the next frame's ground and the frame itself
+      if (s->sync_since == 0) s->sync_since = now;
+      if (now - s->sync_since < 50) {
+        s->sync_waits++;
+        return 0;
+      }
+    } else hdt_take(*(void **)t, newest);    // the ground first: the picture that follows is at least as new
+    s->sync_since = 0;
+  }
+  upload(t, now);
+  return I32(t + RT_SHOWN) != shown;
+}
+
 // Render thread, every presented frame, in place of upload(t, now): takes golf's new picture (or keeps
 // the one on screen while the view moves) and says where the course picture goes.
 void __cdecl ls_frame(double now, char *t) {
@@ -310,15 +350,13 @@ void __cdecl ls_frame(double now, char *t) {
     s->last_ty = ty;
     if (s->hold_ms > 0 && I32(CFG_DRAG_FIX) && now - s->move_t < 60 && now - s->digest_t < s->hold_ms) {
       offset_for(t, tx, ty, &ox, &oy);
-      hold = dabs(ox) < I32(FRAME_W) * 0.7 && dabs(oy) < I32(FRAME_H) * 0.6;
+      hold = dabs(ox) < I32(FRAME_W) * s->lead_pct / 100.0 && dabs(oy) < I32(FRAME_H) * s->lead_pct / 100.0;
       if (hold && s->GetAsyncKeyState && (s->GetAsyncKeyState(1) & 0x8000)) hold = 0;   // the left button: a tool at work
     }
   }
   if (hold) s->holds++;
   else {
-    int shown = I32(t + RT_SHOWN);
-    upload(t, now);
-    if (I32(t + RT_SHOWN) != shown) {
+    if (take_picture(s, t, now)) {
       s->digest_t = now;
       s->digests++;
       live = live_ok(s, t);   // the new picture may be another zoom, or not the course
@@ -335,6 +373,12 @@ void __cdecl ls_frame(double now, char *t) {
     return;
   }
   if (dabs(ox) <= 0.5 && dabs(oy) <= 0.5) ox = oy = 0;   // the picture is the view: at rest, no half pixels
+  double lx = I32(FRAME_W) * s->lead_pct / 100.0, ly = I32(FRAME_H) * s->lead_pct / 100.0;
+  if (dabs(ox) > lx || dabs(oy) > ly) {   // no further than the guard band is fit to be seen
+    ox = ox > lx ? lx : ox < -lx ? -lx : ox;
+    oy = oy > ly ? ly : oy < -ly ? -ly : oy;
+    s->capped++;
+  }
   s->px = tx;
   s->py = ty;
   s->mode = mode;
